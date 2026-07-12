@@ -267,9 +267,11 @@ clone_or_update() {
   fi
 }
 
+# ensure_checkout <dir> [ref] [submodules]; "no" skips submodules (see build_mpv.sh).
+_submods(){ [ "${1:-recursive}" = no ] && return 0; git -C "$2" submodule update --init --recursive --depth 1 --jobs "$(nproc)"; }
 ensure_checkout(){
-  local dir="$1" ref="${2:-}"
-  git -C "$dir" submodule update --init --recursive
+  local dir="$1" ref="${2:-}" submods="${3:-recursive}"
+  _submods "$submods" "$dir"
   [ -z "$ref" ] && return 0
   echo "==> Ensuring ref '$ref' in $(basename "$dir")"
   if git -C "$dir" ls-remote --exit-code --tags origin "refs/tags/$ref" >/dev/null 2>&1; then
@@ -286,7 +288,7 @@ ensure_checkout(){
     echo "!! Ref '$ref' not found; staying on default branch"
     git -C "$dir" fetch origin --unshallow || true
   fi
-  git -C "$dir" submodule update --init --recursive
+  _submods "$submods" "$dir"
 }
 
 fetch_tarball() {
@@ -583,7 +585,7 @@ fi
 # ── STEP 16: OpenSSL ──────────────────────────────────────────────────────────
 if built libssl.dll.a; then echo "==> OpenSSL already built, skipping"; else
 clone_or_update "$OPENSSL_REPO" "$SRC_DIR/openssl" 1
-ensure_checkout "$SRC_DIR/openssl" "$OPENSSL_REF"
+ensure_checkout "$SRC_DIR/openssl" "$OPENSSL_REF" no   # skip test-only quiche/boringssl submodules
 pushd "$SRC_DIR/openssl" >/dev/null
 # OpenSSL derives the toolchain from --cross-compile-prefix; a set CC would
 # be double-prefixed. Run in a cleaned subshell.
