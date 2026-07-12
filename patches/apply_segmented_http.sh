@@ -62,8 +62,9 @@ insert_after "$MPV_SRC/options/options.c" \
   'stream_segmented_http_opts, stream_segmented_http_conf'
 
 # 4. options/options.h: MPOpts field backing the substruct
+# (upstream renamed the type struct lavf_opts -> struct stream_lavf_opts)
 insert_after "$MPV_SRC/options/options.h" \
-  'struct lavf_opts *stream_lavf_opts;' \
+  'struct stream_lavf_opts *stream_lavf_opts;' \
   '    struct segmented_http_opts *stream_segmented_http_opts;' \
   'segmented_http_opts *stream_segmented_http_opts;'
 
