@@ -287,7 +287,7 @@ clone_or_update "$LIBPLACEBO_REPO" "$LIBPLACEBO_SRC" 1
 ensure_checkout "$LIBPLACEBO_SRC" "$LIBPLACEBO_REF"
 pushd "$LIBPLACEBO_SRC" >/dev/null
 rm -rf build
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" \
   --buildtype=release \
   -Ddefault_library=shared \
@@ -387,7 +387,7 @@ ensure_checkout "$LIBBLURAY_SRC" "$LIBBLURAY_REF"
 pushd "$LIBBLURAY_SRC" >/dev/null
 if [ -f meson.build ]; then
   rm -rf build
-  meson setup build . \
+  meson setup build . --libdir=lib \
     --prefix="$PREFIX" \
     --buildtype=release \
     -Ddefault_library=shared
@@ -424,7 +424,7 @@ clone_or_update "$LIBOGG_REPO" "$LIBOGG_SRC" 1
 ensure_checkout "$LIBOGG_SRC" "$LIBOGG_REF"
 pushd "$LIBOGG_SRC" >/dev/null
 if [ -f CMakeLists.txt ]; then
-  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
   cmake --build build -j"$(nproc)" && cmake --install build
 else
@@ -442,7 +442,7 @@ clone_or_update "$LIBVORBIS_REPO" "$LIBVORBIS_SRC" 1
 ensure_checkout "$LIBVORBIS_SRC" "$LIBVORBIS_REF"
 pushd "$LIBVORBIS_SRC" >/dev/null
 if [ -f CMakeLists.txt ]; then
-  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
     -DOGG_INCLUDE_DIR="$PREFIX/include" -DOGG_LIBRARY="$PREFIX/lib/libogg.so"
   cmake --build build -j"$(nproc)" && cmake --install build
@@ -462,7 +462,7 @@ clone_or_update "$LIBOPUS_REPO" "$LIBOPUS_SRC" 1
 ensure_checkout "$LIBOPUS_SRC" "$LIBOPUS_REF"
 pushd "$LIBOPUS_SRC" >/dev/null
 if [ -f CMakeLists.txt ]; then
-  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
     -DOPUS_BUILD_TESTING=OFF -DOPUS_BUILD_PROGRAMS=OFF
   cmake --build build -j"$(nproc)" && cmake --install build
@@ -493,7 +493,7 @@ if built libx265.so; then echo "==> libx265 already built, skipping"; else
 clone_or_update "$X265_REPO" "$X265_SRC" 1
 ensure_checkout "$X265_SRC" "$X265_REF"
 pushd "$X265_SRC" >/dev/null
-cmake -B build -S source \
+cmake -B build -S source -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DENABLE_SHARED=ON -DENABLE_STATIC=OFF -DENABLE_CLI=ON
@@ -544,7 +544,7 @@ if built libwebp.so; then echo "==> libwebp already built, skipping"; else
 clone_or_update "$LIBWEBP_REPO" "$LIBWEBP_SRC" 1
 ensure_checkout "$LIBWEBP_SRC" "$LIBWEBP_REF"
 pushd "$LIBWEBP_SRC" >/dev/null
-cmake -B build -S . \
+cmake -B build -S . -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON \
@@ -581,7 +581,7 @@ if built libopenjp2.so; then echo "==> libopenjpeg already built, skipping"; els
 clone_or_update "$LIBOPENJPEG_REPO" "$LIBOPENJPEG_SRC" 1
 ensure_checkout "$LIBOPENJPEG_SRC" "$LIBOPENJPEG_REF"
 pushd "$LIBOPENJPEG_SRC" >/dev/null
-cmake -B build -S . \
+cmake -B build -S . -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON \
@@ -597,7 +597,7 @@ if built libfribidi.so; then echo "==> fribidi already built, skipping"; else
 clone_or_update "$FRIBIDI_REPO" "$FRIBIDI_SRC" 1
 ensure_checkout "$FRIBIDI_SRC" "$FRIBIDI_REF"
 pushd "$FRIBIDI_SRC" >/dev/null
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared \
   -Ddocs=false -Dtests=false -Dbin=false
@@ -612,7 +612,7 @@ if built libharfbuzz.so; then echo "==> harfbuzz already built, skipping"; else
 clone_or_update "$HARFBUZZ_REPO" "$HARFBUZZ_SRC" 1
 ensure_checkout "$HARFBUZZ_SRC" "$HARFBUZZ_REF"
 pushd "$HARFBUZZ_SRC" >/dev/null
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared \
   -Dutilities=disabled \
@@ -647,7 +647,7 @@ if built libssh.so; then echo "==> libssh already built, skipping"; else
 clone_or_update "$LIBSSH_REPO" "$LIBSSH_SRC" 1
 ensure_checkout "$LIBSSH_SRC" "$LIBSSH_REF"
 pushd "$LIBSSH_SRC" >/dev/null
-cmake -B build -S . \
+cmake -B build -S . -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON -DWITH_STATIC_LIB=OFF \
@@ -664,7 +664,7 @@ if built libarchive.so; then echo "==> libarchive already built, skipping"; else
 clone_or_update "$LIBARCHIVE_REPO" "$LIBARCHIVE_SRC" 1
 ensure_checkout "$LIBARCHIVE_SRC" "$LIBARCHIVE_REF"
 pushd "$LIBARCHIVE_SRC" >/dev/null
-cmake -B build -S . \
+cmake -B build -S . -DCMAKE_INSTALL_LIBDIR=lib \
   -DCMAKE_INSTALL_PREFIX="$PREFIX" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON \
@@ -681,7 +681,7 @@ if built librubberband.so; then echo "==> rubberband already built, skipping"; e
 clone_or_update "$RUBBERBAND_REPO" "$RUBBERBAND_SRC" 1
 ensure_checkout "$RUBBERBAND_SRC" "$RUBBERBAND_REF"
 pushd "$RUBBERBAND_SRC" >/dev/null
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared \
   -Dfft=builtin -Dresampler=speex
@@ -696,7 +696,7 @@ if built libdvdread.so; then echo "==> libdvdread already built, skipping"; else
 clone_or_update "$LIBDVDREAD_REPO" "$LIBDVDREAD_SRC" 1
 ensure_checkout "$LIBDVDREAD_SRC" "$LIBDVDREAD_REF"
 pushd "$LIBDVDREAD_SRC" >/dev/null
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared \
   -Denable_docs=false
@@ -711,7 +711,7 @@ if built libdvdnav.so; then echo "==> libdvdnav already built, skipping"; else
 clone_or_update "$LIBDVDNAV_REPO" "$LIBDVDNAV_SRC" 1
 ensure_checkout "$LIBDVDNAV_SRC" "$LIBDVDNAV_REF"
 pushd "$LIBDVDNAV_SRC" >/dev/null
-meson setup build . \
+meson setup build . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared
 meson compile -C build -j"$(nproc)"
@@ -845,7 +845,7 @@ fi
 
 rm -rf "$MPV_BUILD_DIR"
 pushd "$MPV_SRC" >/dev/null
-meson setup "$MPV_BUILD_DIR" . \
+meson setup "$MPV_BUILD_DIR" . --libdir=lib \
   --prefix="$PREFIX" --buildtype=release \
   -Ddefault_library=shared \
   -Dcdda=enabled -Dcplugins=enabled -Ddvdnav=enabled \
