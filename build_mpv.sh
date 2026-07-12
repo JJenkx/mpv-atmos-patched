@@ -46,8 +46,9 @@ elif command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   _APT=(
     build-essential git curl ca-certificates pkg-config cmake
-    python3 python3-pip
-    ninja-build autoconf automake libtool m4
+    python3 python3-pip python3-setuptools
+    ninja-build autoconf automake libtool libtool-bin m4
+    bison flex gettext patch file
     yasm nasm perl texinfo patchelf xz-utils zip
     xorg-dev libx11-dev libxext-dev libxpresent-dev
     libxcb1-dev libxcb-shm0-dev libxcb-shape0-dev libxcb-xfixes0-dev
