@@ -4,46 +4,68 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ─────────────────────────── Preflight: ensure build deps ───────────────────────────
-_PKG_GROUPS=(base-devel)
-_PKGS=(
-  git curl python python-pip
-  cmake meson ninja pkgconf
-  autoconf automake libtool m4
-  yasm nasm
-  gcc gcc-libs binutils make
-  perl texinfo
-  libx11 libxcb libxext xorgproto
-  wayland wayland-protocols
-  vulkan-headers uchardet libxpresent
-  libxml2 freetype2 fontconfig
-  patchelf
-  libpng
-)
-
+# Distro-aware: pacman on Arch (local dev), apt on Debian/Ubuntu (the older-glibc
+# container used for portable release builds in CI). Everything else is built
+# from source below, so only build tools + a handful of system libs are needed.
 if [[ $EUID -eq 0 ]]; then
   _SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+  _SUDO="sudo"
 else
-  if command -v sudo >/dev/null 2>&1; then
-    _SUDO="sudo"
-  else
-    echo "'sudo' is not installed and you're not root."
-    exit 1
-  fi
+  echo "'sudo' is not installed and you're not root."; exit 1
 fi
 
-_missing=()
-for p in "${_PKGS[@]}"; do
-  if ! pacman -Qq "$p" >/dev/null 2>&1; then
-    _missing+=("$p")
+if command -v pacman >/dev/null 2>&1; then
+  _PKG_GROUPS=(base-devel)
+  _PKGS=(
+    git curl python python-pip
+    cmake meson ninja pkgconf
+    autoconf automake libtool m4
+    yasm nasm
+    gcc gcc-libs binutils make
+    perl texinfo
+    libx11 libxcb libxext xorgproto
+    wayland wayland-protocols
+    vulkan-headers uchardet libxpresent
+    libxml2 freetype2 fontconfig
+    patchelf
+    libpng
+  )
+  _missing=()
+  for p in "${_PKGS[@]}"; do
+    pacman -Qq "$p" >/dev/null 2>&1 || _missing+=("$p")
+  done
+  if ((${#_missing[@]} > 0)); then
+    echo "==> Installing missing build dependencies via pacman:"
+    printf '    %s\n' "${_PKG_GROUPS[@]}" "${_missing[@]}"
+    $_SUDO pacman -S --needed ${CI:+--noconfirm} "${_PKG_GROUPS[@]}" "${_missing[@]}"
+  else
+    echo "==> All required build dependencies already present."
   fi
-done
-
-if ((${#_missing[@]} > 0)); then
-  echo "==> Installing missing build dependencies via pacman:"
-  printf '    %s\n' "${_PKG_GROUPS[@]}" "${_missing[@]}"
-  $_SUDO pacman -S --needed ${CI:+--noconfirm} "${_PKG_GROUPS[@]}" "${_missing[@]}"
+elif command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  _APT=(
+    build-essential git curl ca-certificates pkg-config cmake
+    python3 python3-pip
+    ninja-build autoconf automake libtool m4
+    yasm nasm perl texinfo patchelf xz-utils zip
+    xorg-dev libx11-dev libxext-dev libxpresent-dev
+    libxcb1-dev libxcb-shm0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+    libxrandr-dev libxinerama-dev libxss-dev libxkbcommon-dev
+    libwayland-dev wayland-protocols
+    libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libgbm-dev
+    libvulkan-dev libdrm-dev
+    libpulse-dev libasound2-dev
+    libfreetype-dev libfontconfig1-dev libxml2-dev libpng-dev libuchardet-dev
+    zlib1g-dev liblzma-dev libbz2-dev
+  )
+  echo "==> Installing build dependencies via apt-get ..."
+  $_SUDO apt-get update -qq
+  $_SUDO apt-get install -y --no-install-recommends "${_APT[@]}"
+  # Ubuntu's packaged meson is too old for mpv/libplacebo — get a current one.
+  $_SUDO pip3 install --upgrade meson
 else
-  echo "==> All required build dependencies already present."
+  echo "!! No supported package manager (pacman/apt-get) found; install deps manually." >&2
 fi
 # ────────────────────────────────────────────────────────────────────────────────────
 

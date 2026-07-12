@@ -46,11 +46,17 @@ jobs:
         run: |
           plat="${{ github.event.inputs.platform || 'all' }}"
           vari="${{ github.event.inputs.variant || 'all' }}"
+          # Linux builds in an Ubuntu 22.04 container (glibc 2.35 floor -> runs on
+          # ~2022+ distros). Windows cross-build stays on Arch (mingw-w64 packages).
           items=()
           for p in linux windows; do
+            case "$p" in
+              linux)   c="ubuntu:22.04" ;;
+              windows) c="archlinux:latest" ;;
+            esac
             for v in stock enhanced; do
               if [[ ( "$plat" == all || "$plat" == "$p" ) && ( "$vari" == all || "$vari" == "$v" ) ]]; then
-                items+=("{\"platform\":\"$p\",\"variant\":\"$v\"}")
+                items+=("{\"platform\":\"$p\",\"variant\":\"$v\",\"container\":\"$c\"}")
               fi
             done
           done
@@ -63,14 +69,23 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     runs-on: ubuntu-latest
-    container: archlinux:latest
+    container: ${{ matrix.container }}
     timeout-minutes: 350
     env:
       VARIANT: ${{ matrix.variant }}
       DISTRIBUTABLE: '1'
+      DEBIAN_FRONTEND: noninteractive
     steps:
-      - name: Refresh pacman + base tools (needed for checkout)
-        run: pacman -Syu --noconfirm --needed git tar xz zip
+      - name: Bootstrap base tools (needed for checkout)
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update -qq
+            apt-get install -y --no-install-recommends \
+              git ca-certificates tar xz-utils zip \
+              squashfs-tools desktop-file-utils file
+          else
+            pacman -Syu --noconfirm --needed git tar xz zip
+          fi
 
       - uses: actions/checkout@v4
 
