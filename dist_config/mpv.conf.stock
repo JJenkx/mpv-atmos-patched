@@ -1,0 +1,21 @@
+# mpv-atmos-patched — "Stock + Atmos" default configuration.
+# This variant is stock mpv (plus the TrueHD/Atmos spdifenc patch), so it only
+# sets options that exist in upstream mpv. The extra streaming options from the
+# enhanced build (segmented-chunks, next-file-prefetch, demuxer-cache-unselected-*)
+# are intentionally omitted — stock mpv would reject them.
+# Your personal config from the source repo ships alongside as mpv.conf.example /
+# input.conf.example — copy from it to customize.
+
+# ── Demuxer cache ─────────────────────────────────────────────────────────────
+demuxer-max-bytes=512MiB
+demuxer-max-back-bytes=512MiB
+
+# ── Playback / sync ───────────────────────────────────────────────────────────
+video-sync=display-vdrop
+force-window=immediate
+
+# ── Network / streaming ───────────────────────────────────────────────────────
+network-timeout=5
+hls-bitrate=max
+cache=yes
+cache-pause=yes

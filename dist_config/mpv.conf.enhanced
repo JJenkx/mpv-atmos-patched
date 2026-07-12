@@ -1,0 +1,31 @@
+# mpv-atmos-patched — "Enhanced + Atmos" default configuration.
+# These are the streaming-tuned defaults for the enhanced build. Options marked
+# below require the custom patches compiled into this build (segmented HTTP,
+# next-file prefetch, unselected-track demux caching) and do not exist in stock
+# mpv. Your personal config from the source repo ships alongside this file as
+# mpv.conf.example / input.conf.example — copy from it to customize.
+
+# ── Demuxer cache (keeps deselected sub/audio packets; patched options) ───────
+demuxer-cache-unselected-audio=yes
+demuxer-cache-unselected-subs=yes
+demuxer-max-bytes=512MiB
+demuxer-max-back-bytes=512MiB
+
+# ── Playback / sync ───────────────────────────────────────────────────────────
+video-sync=display-vdrop
+force-window=immediate
+
+# ── Network / streaming ───────────────────────────────────────────────────────
+network-timeout=5
+hls-bitrate=max
+cache=yes
+cache-pause=yes
+
+# ── Segmented parallel HTTP downloader (patched) ──────────────────────────────
+segmented-chunks=2
+segment-size=5MiB
+
+# ── Next-file prefetch (patched) ──────────────────────────────────────────────
+next-file-prefetch=yes
+next-file-demuxer-max-bytes-prefetch=256MiB
+next-file-segmented-chunks=2

@@ -1,0 +1,212 @@
+name: build-release
+
+# Builds the 2 variants (stock / enhanced) x 2 platforms (Linux / Windows) in an
+# Arch Linux container, then publishes them to a GitHub Release with signed
+# build-provenance attestations.
+#
+# Trigger:
+#   - push a tag like v0.1.0  -> builds everything and publishes a Release
+#   - manual (Actions -> Run workflow) -> pick platform/variant subset; set
+#     "release" true to also publish (needs a tag-less prerelease name).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to build
+        type: choice
+        options: [all, linux, windows]
+        default: all
+      variant:
+        description: Variants to build
+        type: choice
+        options: [all, stock, enhanced]
+        default: all
+
+permissions:
+  contents: write        # create releases
+  id-token: write        # provenance attestation
+  attestations: write    # provenance attestation
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Compute the build matrix from the dispatch inputs (full matrix on tag) ──
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - id: gen
+        shell: bash
+        run: |
+          plat="${{ github.event.inputs.platform || 'all' }}"
+          vari="${{ github.event.inputs.variant || 'all' }}"
+          items=()
+          for p in linux windows; do
+            for v in stock enhanced; do
+              if [[ ( "$plat" == all || "$plat" == "$p" ) && ( "$vari" == all || "$vari" == "$v" ) ]]; then
+                items+=("{\"platform\":\"$p\",\"variant\":\"$v\"}")
+              fi
+            done
+          done
+          IFS=,
+          echo "matrix={\"include\":[${items[*]}]}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 350
+    env:
+      VARIANT: ${{ matrix.variant }}
+      DISTRIBUTABLE: '1'
+    steps:
+      - name: Refresh pacman + base tools (needed for checkout)
+        run: pacman -Syu --noconfirm --needed git tar xz zip
+
+      - uses: actions/checkout@v4
+
+      - name: Record upstream refs
+        id: refs
+        shell: bash
+        run: |
+          mpv_ref=$(git ls-remote https://github.com/mpv-player/mpv.git HEAD | cut -f1)
+          ff_ref=$(git ls-remote https://github.com/FFmpeg/FFmpeg.git HEAD | cut -f1)
+          echo "mpv=$mpv_ref"  >> "$GITHUB_OUTPUT"
+          echo "ffmpeg=$ff_ref" >> "$GITHUB_OUTPUT"
+          echo "Building mpv=$mpv_ref ffmpeg=$ff_ref"
+
+      # ── Linux ────────────────────────────────────────────────────────────────
+      - name: Build (Linux)
+        if: matrix.platform == 'linux'
+        run: ./build_mpv.sh
+
+      - name: Package Linux tarball + AppImage
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          name="mpv-atmos-${VARIANT}-linux-x86_64"
+          top="$name"
+          rm -rf "$top" dist && mkdir -p dist
+
+          # Relocatable payload: bin/lib/share only (drop build-only trees).
+          mkdir -p "$top"
+          cp -a mpv/bin "$top/bin"
+          cp -a mpv/lib "$top/lib"
+          cp -a mpv/share "$top/share"
+          rm -rf "$top/lib/pkgconfig" "$top/share/man" "$top/include" || true
+          # strip debug info
+          find "$top/bin" "$top/lib" -type f \( -name '*.so*' -o -executable \) \
+            -exec strip --strip-unneeded {} + 2>/dev/null || true
+          # bundle config (curated per variant) + a wrapper that guarantees it is used
+          cp -a mpv.config "$top/portable_config"
+          ./scripts/assemble_dist_config.sh "$top/portable_config" "$VARIANT" linux
+          cat > "$top/mpv" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/bin/mpv" --config-dir="$HERE/portable_config" "$@"
+          EOF
+          chmod +x "$top/mpv"
+
+          tar -cJf "dist/$name.tar.xz" "$top"
+          echo "== tarball ==" && ls -lh "dist/$name.tar.xz"
+
+          # ── AppImage ──
+          appdir=AppDir
+          rm -rf "$appdir"; mkdir -p "$appdir/usr"
+          cp -a mpv/bin "$appdir/usr/bin"
+          cp -a mpv/lib "$appdir/usr/lib"
+          cp -a mpv/share "$appdir/usr/share"
+          rm -rf "$appdir/usr/lib/pkgconfig" || true
+          find "$appdir/usr/bin" "$appdir/usr/lib" -type f \( -name '*.so*' -o -executable \) \
+            -exec strip --strip-unneeded {} + 2>/dev/null || true
+          cp -a mpv.config "$appdir/usr/portable_config"
+          ./scripts/assemble_dist_config.sh "$appdir/usr/portable_config" "$VARIANT" linux
+          cat > "$appdir/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/mpv" --config-dir="$HERE/usr/portable_config" "$@"
+          EOF
+          chmod +x "$appdir/AppRun"
+          # desktop + icon (reuse mpv's own if present)
+          if [ -f "$appdir/usr/share/applications/mpv.desktop" ]; then
+            cp "$appdir/usr/share/applications/mpv.desktop" "$appdir/mpv.desktop"
+          else
+            printf '[Desktop Entry]\nType=Application\nName=mpv (Atmos %s)\nExec=mpv %%U\nIcon=mpv\nCategories=AudioVideo;Player;\nTerminal=false\n' "$VARIANT" > "$appdir/mpv.desktop"
+          fi
+          icon=$(find "$appdir/usr/share/icons" -name 'mpv.png' | sort | tail -1 || true)
+          [ -n "$icon" ] && cp "$icon" "$appdir/mpv.png" && cp "$icon" "$appdir/.DirIcon" || true
+
+          curl -fsSL -o /tmp/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool "$appdir" "dist/$name.AppImage"
+          echo "== AppImage ==" && ls -lh "dist/$name.AppImage"
+
+      # ── Windows (mingw-w64 cross) ─────────────────────────────────────────────
+      - name: Install mingw-w64 toolchain (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          pacman -S --noconfirm --needed \
+            mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers \
+            mingw-w64-winpthreads mingw-w64-tools \
+            base-devel curl cmake meson ninja pkgconf nasm yasm python-jinja
+
+      - name: Build (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          ./build_mpv_windows.sh
+          ./collect_dlls.sh
+
+      - name: Package Windows zip
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          name="mpv-atmos-${VARIANT}-windows-x86_64"
+          rm -rf dist && mkdir -p dist
+          test -d dist-win || { echo "!! dist-win/ not produced by collect_dlls.sh"; ls -la; exit 1; }
+          ./scripts/assemble_dist_config.sh dist-win/portable_config "$VARIANT" windows
+          ( cd dist-win && zip -r -9 "../dist/$name.zip" . )
+          echo "== zip ==" && ls -lh "dist/$name.zip"
+
+      # ── Provenance + upload ────────────────────────────────────────────────────
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-atmos-${{ matrix.platform }}-${{ matrix.variant }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ── Publish a Release (only on tag pushes) ──
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List assets
+        run: ls -lhR artifacts
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

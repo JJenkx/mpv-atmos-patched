@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=MPV (Patched)
+Comment=Launch MPV via portable patched wrapper
+TryExec='/path/to/mpv.portable.share/mpv_patched.sh'
+Exec='/path/to/mpv.portable.share/mpv_patched.sh' %U
+Icon=mpv-patched
+Terminal=false
+Categories=AudioVideo;Video;Player;
+StartupNotify=true
+# Ensure Plasma maps the window to THIS launcher (Wayland + X11)
+StartupWMClass=mpv-patched
+X-KDE-WaylandAppId=mpv-patched
+# Accept URLs/files
+MimeType=video/*;audio/*;application/x-matroska;application/ogg;application/x-ogm-video;application/x-mpegurl;application/vnd.rn-realmedia;application/x-shorten;application/x-flac;audio/x-flac;application/x-cue;
