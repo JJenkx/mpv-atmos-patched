@@ -24,6 +24,11 @@ on:
         type: choice
         options: [all, stock, enhanced]
         default: all
+      runner:
+        description: Where to build
+        type: choice
+        options: [github, self-hosted]
+        default: github
 
 permissions:
   contents: write        # create releases
@@ -68,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.inputs.runner == 'self-hosted') && fromJSON('["self-hosted"]') || 'ubuntu-latest' }}
     container: ${{ matrix.container }}
     timeout-minutes: 350
     env:
