@@ -38,7 +38,9 @@ Silent flags: `/VERYSILENT /PORTABLE=1 /DIR="D:\apps\mpv"`.
 
 - `ao=wasapi` + `audio-exclusive=yes` — exclusive mode is required for untouched
   spdif/TrueHD-MAT bitstreaming. Pick your HDMI device via
-  `mpv --audio-device=help` and set `audio-device=` in `mpv.conf`.
+  `.\mpv.com --audio-device=help` (from PowerShell/cmd in the install folder — use
+  `mpv.com`, not `mpv.exe`, or you get no console output) and set `audio-device=`
+  in `mpv.conf`.
 - IPC: named pipe `\\.\pipe\mpv-socket` (was a Unix socket).
 - Launcher flags migrated into `mpv.conf`.
 - Shader hotkeys (F1–F4, `\`, `]`) fixed to portable `~~/shaders/` paths

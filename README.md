@@ -81,8 +81,19 @@ whether the extra streaming features are compiled in.
 | **Enhanced + Atmos** | [`mpv-atmos-enhanced-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-enhanced-windows-x86_64.zip) |
 | **Stock + Atmos** | [`mpv-atmos-stock-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-stock-windows-x86_64.zip) |
 
-**Windows:** unzip anywhere and run `mpv.exe`. It's fully portable — config lives
-in `portable_config\` next to the exe; no installer, no registry writes.
+**Windows:** unzip anywhere and run **`mpv.exe`** (or drag a video onto it). Fully
+portable — config lives in `portable_config\` next to the exe; no installer, no
+registry writes.
+
+> 💡 **For anything on the command line, use `mpv.com`, not `mpv.exe`.**
+> `mpv.exe` is the windowed player and prints **nothing** to the console. `mpv.com`
+> is the identical player *with* console output. Open PowerShell in the folder
+> (Shift + Right-click → *Open in Terminal*) and run e.g.:
+> ```powershell
+> .\mpv.com --audio-device=help     # list audio devices
+> .\mpv.com --version               # version / build info
+> .\mpv.com "C:\path\to\movie.mkv"  # play, with log output visible
+> ```
 
 ---
 
@@ -122,13 +133,53 @@ options — segmented downloading, next-file prefetch, unselected-track caching)
 > blindly doesn't just fail silently; on Linux, exclusive-mode spdif sent to the
 > wrong device **can hang your machine hard enough that it won't even reboot.**
 >
-> So it's one deliberate step. In `portable_config/mpv.conf`:
-> 1. Find your receiver: `mpv --audio-device=help`
->    (e.g. `alsa/hdmi:CARD=HDMI,DEV=0`, or `wasapi/{...}` on Windows)
-> 2. Put it in the `audio-device=` line
-> 3. Uncomment the rest of the audio block
->
-> **No receiver?** Change nothing. You get normal PCM audio out of the box.
+> So it's one deliberate step — see below. **No receiver?** Change nothing; you get
+> normal PCM audio out of the box.
+
+### Enabling passthrough — Windows
+
+1. **Open PowerShell** (or Command Prompt) **in the folder you unzipped.**
+   Easiest way: in Explorer, **Shift + Right-click** the folder →
+   *"Open PowerShell window here"* / *"Open in Terminal"*. Or type it:
+   ```powershell
+   cd "C:\path\to\mpv-atmos-enhanced-windows-x86_64"
+   ```
+2. **List your audio devices:**
+   ```powershell
+   .\mpv.com --audio-device=help
+   ```
+   > ⚠️ Use **`mpv.com`**, not `mpv.exe`. `mpv.exe` is the windowed player and prints
+   > **nothing** to the console — `mpv.com` is the same player *with* console output,
+   > so it's the one that will actually show you the list. The same applies to any
+   > command-line use (`.\mpv.com --version`, `.\mpv.com "C:\movie.mkv"`, etc.).
+
+   You'll see lines like `'wasapi/{0.0.1.00000000}.{9a8b…}' (Denon-AVR …)`. Copy the
+   whole `wasapi/{…}` part for your receiver.
+3. **Edit `portable_config\mpv.conf`** (Notepad is fine): paste your device into the
+   `audio-device=` line, then **remove the leading `#`** from that line *and* from
+   `ao=`, `audio-channels=`, `audio-exclusive=`, `audio-spdif=`, `audio-buffer=`.
+4. **Test:** `.\mpv.com "C:\path\to\movie.mkv"` — your receiver should display
+   *Atmos / TrueHD / DTS-HD*. Press **`i`** in mpv for the stats overlay.
+
+### Enabling passthrough — Linux
+
+1. Open a terminal in the extracted folder:
+   ```bash
+   cd ~/Downloads/mpv-atmos-enhanced-linux-x86_64
+   ```
+2. List your audio devices:
+   ```bash
+   ./mpv --audio-device=help
+   ```
+   (Or `aplay -L`, `aplay -l`, `pactl list sinks short`.) Look for your HDMI/AVR
+   output, e.g. `alsa/hdmi:CARD=HDMI,DEV=0`.
+3. Edit `portable_config/mpv.conf`: paste it into `audio-device=`, then uncomment
+   that line *and* `ao=`, `audio-channels=`, `audio-exclusive=`, `audio-spdif=`,
+   `audio-buffer=`.
+4. Test: `./mpv /path/to/movie.mkv` — your receiver should display the format.
+
+The `mpv.conf` in your download walks you through all of this too, with the exact
+lines to uncomment.
 
 The maintainer's full personal `mpv.conf` and `input.conf` ride along as
 `mpv.conf.example` / `input.conf.example` for reference — copy what you like.
