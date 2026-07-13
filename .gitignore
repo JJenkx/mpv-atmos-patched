@@ -11,6 +11,24 @@
 # Logs
 *.log
 
+# mpv RUNTIME STATE — never commit, never ship.
+# watch_later files and playlists record the FULL media URL, including query
+# strings (e.g. Jellyfin ?api_key=...). Because packaging copies mpv.config/ and
+# windows_config/portable_config/ wholesale into every release, anything that
+# lands here would be both committed AND published to the world.
+watch_later/
+playlists/*
+!playlists/.gitkeep
+shader_cache/
+icc_cache/
+gpu-shader-cache/
+*.m3u
+*.m3u8
+mpv.config/C_/
+**/watch_later/
+**/shader_cache/
+**/icc_cache/
+
 # Editor / OS cruft
 __pycache__/
 *.pyc
