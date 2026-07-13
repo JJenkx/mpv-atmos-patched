@@ -309,22 +309,28 @@ jobs:
           set -Eeuo pipefail
           test -n "$(ls artifacts/BUILD-INFO-*.txt 2>/dev/null)" \
             || { echo "!! no BUILD-INFO files — cannot state upstream versions"; exit 1; }
+          # Pull the human-readable versions out of one BUILD-INFO (all four builds
+          # use the same upstream sources, built from the same commit).
+          any="$(ls artifacts/BUILD-INFO-*.txt | head -1)"
+          getv() { sed -n "s/^  $1 *//p" "$any" | head -1 | sed 's/  */ /g'; }
+          MPV_V="$(getv mpv)"; FF_V="$(getv FFmpeg)"; PL_V="$(getv libplacebo)"
+
           {
             echo "Portable, self-contained **mpv with TrueHD/Dolby Atmos (MAT) passthrough**."
             echo "Linux (AppImage + tar.xz) and Windows (portable zip), in **stock** and **enhanced** variants."
             echo
-            echo "### Upstream sources this release was built from"
+            echo "### Built from"
             echo
-            echo '```'
-            for f in artifacts/BUILD-INFO-*.txt; do
-              echo "[$(basename "$f" .txt | sed 's/^BUILD-INFO-//')]"
-              grep -E '^ +(mpv|FFmpeg|libplacebo):' "$f" || true
-              echo
-            done
-            echo '```'
+            echo "| Component | Version |"
+            echo "|---|---|"
+            echo "| **mpv** | \`${MPV_V}\` |"
+            echo "| **FFmpeg** | \`${FF_V}\` |"
+            echo "| **libplacebo** | \`${PL_V}\` |"
             echo
-            echo "Every download also ships a \`BUILD-INFO.txt\` containing the same record, so you can"
-            echo "verify offline exactly which upstream commits your binary was compiled from."
+            echo "Every download ships a **\`BUILD-INFO.txt\`** listing the version of *every* bundled"
+            echo "dependency (x264, x265, libass, OpenSSL, Vulkan, wayland, …) plus the exact git commit"
+            echo "of all ~29 libraries built from source — so you can verify offline precisely what went"
+            echo "into your binary. The same files are attached below as \`BUILD-INFO-<platform>-<variant>.txt\`."
             echo
             echo "### Notes"
             echo "- **TrueHD/Atmos passthrough ships OFF** and needs one deliberate step: run"
