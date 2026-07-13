@@ -791,15 +791,23 @@ else
 fi
 
 # ── STEP 24b: wayland (mpv master outpaces Ubuntu 22.04 and released tags) ────
-# libwayland (client/cursor/scanner/egl): compile from source only when the
-# system's is too old (mpv needs >= 1.23). Bundling a newer libwayland-client is
-# wire-compatible with any (older) compositor on the target machine.
+# libwayland: build from source only when the system's is too old (mpv needs
+# >= 1.23; Ubuntu 22.04 ships 1.20), because the resulting libwayland-client gets
+# BUNDLED and therefore SHADOWS the target machine's own copy.
+#
+# That shadowing is why we must track *main* here, not a fixed tag. The target's
+# Mesa/GPU driver links libwayland-client too, and resolves against whichever copy
+# is loaded — ours. Ship an older one and the driver breaks on newer systems with
+# "undefined symbol: wl_display_dispatch_queue_timeout" -> the Vulkan ICD fails to
+# load -> "no suitable device". So the bundled libwayland must be a SUPERSET of
+# any released one. (Bundling is unavoidable: our old-glibc floor has wayland too
+# old for mpv, so old distros need our copy.)
 if pkg-config --atleast-version=1.23.0 wayland-client 2>/dev/null; then
   echo "==> System libwayland >= 1.23; using it"
 else
-  echo "==> Building libwayland from source ..."
+  echo "==> Building libwayland from source (main: must be >= any distro's) ..."
   clone_or_update "https://gitlab.freedesktop.org/wayland/wayland.git" "$SRC_DIR/wayland" 1
-  ensure_checkout "$SRC_DIR/wayland" "${WAYLAND_REF:-1.23.1}"
+  ensure_checkout "$SRC_DIR/wayland" "${WAYLAND_REF:-main}"
   pushd "$SRC_DIR/wayland" >/dev/null
   rm -rf build
   meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release \
