@@ -157,7 +157,7 @@ procedure RegisterExtensions();
 var
   Exts: TStringList;
   i: Integer;
-  Ext, ProgId, ExePath, RootKey: String;
+  Ext, ProgId, ExePath: String;
 begin
   ExePath := ExpandConstant('{app}\mpv.exe');
   Exts := TStringList.Create;

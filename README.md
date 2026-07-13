@@ -113,14 +113,26 @@ reason this project exists.
 
 ### Windows (x86_64)
 
-| Variant | Portable ZIP |
-|---|---|
-| **Enhanced + Atmos** | [`mpv-atmos-enhanced-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-enhanced-windows-x86_64.zip) |
-| **Stock + Atmos** | [`mpv-atmos-stock-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-stock-windows-x86_64.zip) |
+| Variant | Installer (system *or* portable) | Portable ZIP |
+|---|---|---|
+| **Enhanced + Atmos** | [`mpv-atmos-enhanced-windows-setup.exe`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-enhanced-windows-setup.exe) | [`mpv-atmos-enhanced-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-enhanced-windows-x86_64.zip) |
+| **Stock + Atmos** | [`mpv-atmos-stock-windows-setup.exe`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-stock-windows-setup.exe) | [`mpv-atmos-stock-windows-x86_64.zip`](https://github.com/JJenkx/mpv-atmos-patched/releases/latest/download/mpv-atmos-stock-windows-x86_64.zip) |
 
-**Windows:** unzip anywhere and run **`mpv.exe`** (or drag a video onto it). Fully
-portable — config lives in `portable_config\` next to the exe; no installer, no
-registry writes.
+**Installer:** it asks up front which kind of install you want, and lets you browse for
+(or type) any install folder:
+
+- **System install** — Start-menu entry, an uninstaller, and it registers itself under
+  its own name (*mpv (Atmos)* / *mpv (Enhanced + Atmos)*) so it shows up in Windows'
+  *Settings → Apps → Default apps* and in *Open with* for media files. It never steals
+  your existing defaults — you opt in from Windows' own UI.
+- **Portable install** — pure extraction to a folder you choose: **no** registry writes,
+  no uninstaller, nothing outside that folder.
+
+Both variants can be installed side by side (they carry different app ids).
+
+**Portable ZIP:** the same payload, if you'd rather not run an installer at all. Unzip
+anywhere and run **`mpv.exe`** (or drag a video onto it) — config lives in
+`portable_config\` next to the exe.
 
 > 💡 **For anything on the command line, use `mpv.com`, not `mpv.exe`.**
 > `mpv.exe` is the windowed player and prints **nothing** to the console. `mpv.com`

@@ -319,19 +319,6 @@ jobs:
           cp /tmp/buildinfo.txt dist-win/BUILD-INFO.txt
           ./scripts/assemble_dist_config.sh dist-win/portable_config "$VARIANT" windows
 
-      - name: Build Windows installer (Inno Setup under wine)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # ISCC (Inno's compiler) is a 32-bit Windows binary, so wine needs 32-bit
-          # support -> Arch's [multilib] repo, which is off by default in the image.
-          grep -q '^\[multilib\]' /etc/pacman.conf || \
-            printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
-          pacman -Sy --noconfirm >/dev/null
-          pacman -S --noconfirm --needed wine
-          ./build_installer.sh "$VARIANT"
-
       - name: Package Windows zip
         if: matrix.platform == 'windows'
         shell: bash
@@ -341,11 +328,9 @@ jobs:
           rm -rf dist && mkdir -p dist
           # dist-win/ was fully prepared in the build step (config + BUILD-INFO).
           cp dist-win/BUILD-INFO.txt "dist/BUILD-INFO-windows-${VARIANT}.txt"
-          # the installer (system OR portable, user picks) ...
-          setup="installer/Output/$( [ "$VARIANT" = enhanced ] && echo mpv-enhanced-atmos || echo mpv-atmos )-setup.exe"
-          [ -f "$setup" ] || { echo "!! installer not built: $setup"; ls -la installer/Output 2>/dev/null; exit 1; }
-          cp "$setup" "dist/mpv-atmos-${VARIANT}-windows-setup.exe"
-          # ... and the plain portable zip, for people who just want the folder
+          # The Inno Setup installer is built in a separate job (see 'installer'):
+          # ISCC is a Windows binary and its container must run as a non-root user,
+          # which an Arch build container cannot do.
           ( cd dist-win && zip -r -9 "../dist/$name.zip" . )
           echo "== zip ==" && ls -lh "dist/$name.zip"
 
@@ -367,9 +352,96 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # ── Windows installer (Inno Setup) ────────────────────────────────────────────
+  # A separate job on purpose. ISCC.exe is a Windows binary, so it needs wine, and
+  # the only wine image that works non-interactively (amake/innosetup) refuses to
+  # run as root — while the Arch *build* container is root-only. So we take the
+  # finished payload zip out of the build job and compile the installer beside it.
+  installer:
+    needs: [setup, build]
+    if: contains(needs.setup.outputs.matrix, 'windows')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [stock, enhanced]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the Windows payload built upstream
+        uses: actions/download-artifact@v4
+        with:
+          name: mpv-atmos-windows-${{ matrix.variant }}
+          path: incoming
+
+      - name: Compile installer (Inno Setup under wine)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # The installer must ship the EXACT tree that was built, attested and
+          # zipped upstream — so unpack that zip rather than rebuilding anything.
+          zip="$(ls incoming/mpv-atmos-${{ matrix.variant }}-windows-x86_64.zip)"
+          rm -rf payload out && mkdir -p payload out
+          unzip -q "$zip" -d payload
+          [ -f payload/mpv.exe ] || { echo "!! payload has no mpv.exe"; ls -la payload; exit 1; }
+
+          # Per-variant identity. The AppId MUST differ between the two, or installing
+          # one would silently upgrade/uninstall the other; they must coexist.
+          case "${{ matrix.variant }}" in
+            enhanced) APPNAME=mpv-enhanced-atmos
+                      DISPLAYNAME="mpv (Enhanced + Atmos)"
+                      APPID='{{1F0B7C4E-2A55-4E1B-9C3D-7A6E51D2B084}' ;;
+            *)        APPNAME=mpv-atmos
+                      DISPLAYNAME="mpv (Atmos)"
+                      APPID='{{9E6A2A6B-30F2-4D2C-9E7A-5B1C64A1E58D}' ;;
+          esac
+
+          cp installer/mpv-atmos.iss installer/mpv-atmos.ico out/
+          # ISCC writes Output/ into /work as the image's own user (xclient, uid 1000),
+          # while the runner owns the workspace as a different uid — so open it up or
+          # the compile dies on a permission error.
+          chmod -R a+rwX out
+          # Three non-obvious constraints, all learned the hard way:
+          #  1. Do NOT run as root: wine refuses a prefix it does not own
+          #     ("/home/xclient/.wine is not owned by you"). The image's default user
+          #     is the only one that works — don't override it with --user either,
+          #     its gid is 101, not 1000.
+          #  2. The image's iscc wrapper winepath-converts *file* arguments only, so
+          #     any path inside a /D define must already be Windows-style (Z:\...).
+          #  3. /payload is read-only on purpose: the payload is the attested tree.
+          docker run --rm \
+            -v "$PWD/out":/work -v "$PWD/payload":/payload:ro \
+            -w /work amake/innosetup \
+            "/DAppName=$APPNAME" \
+            "/DDisplayName=$DISPLAYNAME" \
+            "/DAppId=$APPID" \
+            '/DDistDir=Z:\payload' \
+            '/DIconFile=Z:\work\mpv-atmos.ico' \
+            "/DAppVersion=${GITHUB_REF_NAME#v}" \
+            mpv-atmos.iss
+
+          mkdir -p dist
+          setup="out/Output/${APPNAME}-setup.exe"
+          [ -f "$setup" ] || { echo "!! ISCC produced no installer"; ls -laR out/Output || true; exit 1; }
+          cp "$setup" "dist/mpv-atmos-${{ matrix.variant }}-windows-setup.exe"
+          ls -lh dist/
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        continue-on-error: true
+        with:
+          subject-path: 'dist/*'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-atmos-windows-${{ matrix.variant }}-setup
+          path: dist/*
+          if-no-files-found: error
+
   # ── Publish a Release (only on tag pushes) ──
   release:
-    needs: build
+    needs: [build, installer]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -394,7 +466,8 @@ jobs:
 
           {
             echo "Portable, self-contained **mpv with TrueHD/Dolby Atmos (MAT) passthrough**."
-            echo "Linux (AppImage + tar.xz) and Windows (portable zip), in **stock** and **enhanced** variants."
+            echo "Linux (AppImage + tar.xz) and Windows (installer + portable zip), in **stock** and"
+            echo "**enhanced** variants."
             echo
             echo "### Built from"
             echo
@@ -414,8 +487,22 @@ jobs:
             echo "## Getting started"
             echo
             echo "### 🪟 Windows"
-            echo "Unzip anywhere and run **\`mpv.exe\`** (or drag a video onto it). Fully portable —"
-            echo "no installer, no registry writes."
+            echo
+            echo "**\`…-windows-setup.exe\`** — the installer. It asks you which kind of install you want,"
+            echo "and lets you browse for / type any install folder:"
+            echo
+            echo "* **System install** — into Program Files (or wherever you point it). Start-menu entry,"
+            echo "  and it registers itself under its own name (*mpv (Atmos)* / *mpv (Enhanced + Atmos)*),"
+            echo "  so it appears in Windows'"
+            echo "  *Settings → Apps → Default apps* and in *Open with* for media files. Has an uninstaller."
+            echo "  It never steals your existing defaults — you opt in from Windows' own UI."
+            echo "* **Portable install** — pure extraction to a folder you choose. **No** registry writes,"
+            echo "  no uninstaller, nothing outside that folder."
+            echo
+            echo "**\`…-windows-x86_64.zip\`** — the same payload as a plain zip, if you'd rather not run"
+            echo "an installer at all. Unzip anywhere and run **\`mpv.exe\`** (or drag a video onto it)."
+            echo
+            echo "Both variants can be installed side by side (they use different app ids)."
             echo
             echo "> ⚠️ **For anything on the command line, use \`mpv.com\`, not \`mpv.exe\`.**"
             echo "> \`mpv.exe\` is the windowed player and prints **nothing** to the console."
@@ -437,6 +524,21 @@ jobs:
             echo './mpv --audio-device=help          # list your audio devices'
             echo './mpv /path/to/movie.mkv           # play'
             echo '```'
+            echo
+            echo "#### Showing up in your desktop / file manager"
+            echo "File managers only offer apps the desktop knows about — most (GNOME Files included)"
+            echo "give you no way to browse for a binary in *Open with*. The tarball ships an installer"
+            echo "that registers this build under **its own name** (\`mpv-atmos\` / \`mpv-enhanced-atmos\`),"
+            echo "so it can sit alongside a system mpv without either replacing the other:"
+            echo '```bash'
+            echo './install.sh              # adds the .desktop entry + icons, for your user only'
+            echo './install.sh --default    # ...and also make it the default video/audio player'
+            echo './uninstall.sh            # removes everything it added'
+            echo '```'
+            echo "No \`sudo\`, and it writes nothing outside \`~/.local\`. It picks up mpv's own full list"
+            echo "of ~122 media types, so it appears for every format mpv can actually play. After it runs,"
+            echo "the build shows up in your launcher and in *Open with* — keep the extracted folder where"
+            echo "it is (the entry points at it)."
             echo
             echo "## 🔊 Turning on TrueHD/Atmos passthrough"
             echo
