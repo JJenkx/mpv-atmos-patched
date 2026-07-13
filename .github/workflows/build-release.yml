@@ -345,3 +345,6 @@ jobs:
           body_path: NOTES.md
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Tags like v0.1.0-rc1 publish as a prerelease (dress rehearsals);
+          # a plain v0.1.0 publishes as the real thing.
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
