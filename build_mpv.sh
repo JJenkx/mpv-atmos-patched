@@ -977,6 +977,23 @@ if command -v patchelf >/dev/null 2>&1; then
   set_rpath "$PREFIX/bin/mpv"
   set_rpath "$PREFIX/bin/ffmpeg"
   set_rpath "$PREFIX/bin/ffprobe"
+
+  # Every bundled library also needs $ORIGIN so it can find its siblings.
+  # patchelf writes DT_RUNPATH, which the loader applies ONLY to an object's own
+  # direct dependencies — it does NOT propagate to transitive ones. Without this,
+  # e.g. libavformat cannot find libssl.so.4 sitting right next to it and the
+  # portable build fails to start ("cannot open shared object file") on any
+  # machine that lacks those libs system-wide. This also strips the absolute
+  # build-machine path the linker baked into the libs' RUNPATH.
+  _nso=0
+  shopt -s nullglob
+  for _so in "$PREFIX"/lib/*.so "$PREFIX"/lib/*.so.*; do
+    [ -L "$_so" ] && continue          # skip symlinks (patch the real file once)
+    [ -f "$_so" ] || continue
+    patchelf --set-rpath '$ORIGIN' "$_so" 2>/dev/null && _nso=$((_nso+1))
+  done
+  shopt -u nullglob
+  echo "==> RUNPATH set on 3 executables + $_nso bundled libraries"
 else
   echo "!! patchelf not found; relying on LD_LIBRARY_PATH + linker rpath"
 fi

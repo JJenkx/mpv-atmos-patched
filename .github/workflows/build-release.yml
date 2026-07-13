@@ -200,8 +200,13 @@ jobs:
           echo "== zip ==" && ls -lh "dist/$name.zip"
 
       # ── Provenance + upload ────────────────────────────────────────────────────
+      # Build-provenance attestation only works on PUBLIC repos (GitHub rejects it
+      # for user-owned private repos). Keep it non-blocking so private/debug builds
+      # still produce artifacts; it starts signing automatically once the repo is
+      # public, which is the state real releases are cut in.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
+        continue-on-error: true
         with:
           subject-path: 'dist/*'
 
