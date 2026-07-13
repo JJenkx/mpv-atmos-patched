@@ -118,6 +118,11 @@ jobs:
           top="$name"
           rm -rf "$top" dist && mkdir -p dist
 
+          # Record the exact upstream versions this binary was built from.
+          ./scripts/build_info.sh mpv linux "$VARIANT" "${GITHUB_SHA:0:7}" > /tmp/buildinfo.txt
+          cat /tmp/buildinfo.txt
+          cp /tmp/buildinfo.txt "dist/BUILD-INFO-linux-${VARIANT}.txt"
+
           # Relocatable payload: bin/lib/share only (drop build-only trees).
           mkdir -p "$top"
           cp -a mpv/bin "$top/bin"
@@ -127,6 +132,7 @@ jobs:
           # strip debug info
           find "$top/bin" "$top/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
+          cp /tmp/buildinfo.txt "$top/BUILD-INFO.txt"
           # bundle config (curated per variant) + a wrapper that guarantees it is used
           cp -a mpv.config "$top/portable_config"
           ./scripts/assemble_dist_config.sh "$top/portable_config" "$VARIANT" linux
@@ -149,6 +155,7 @@ jobs:
           rm -rf "$appdir/usr/lib/pkgconfig" || true
           find "$appdir/usr/bin" "$appdir/usr/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
+          cp /tmp/buildinfo.txt "$appdir/BUILD-INFO.txt"
           cp -a mpv.config "$appdir/usr/portable_config"
           ./scripts/assemble_dist_config.sh "$appdir/usr/portable_config" "$VARIANT" linux
           cat > "$appdir/AppRun" <<'EOF'
@@ -222,6 +229,13 @@ jobs:
           name="mpv-atmos-${VARIANT}-windows-x86_64"
           rm -rf dist && mkdir -p dist
           test -d dist-win || { echo "!! dist-win/ not produced by collect_dlls.sh"; ls -la; exit 1; }
+
+          # Record the exact upstream versions this binary was built from.
+          ./scripts/build_info.sh mpv-win windows "$VARIANT" "${GITHUB_SHA:0:7}" > /tmp/buildinfo.txt
+          cat /tmp/buildinfo.txt
+          cp /tmp/buildinfo.txt "dist/BUILD-INFO-windows-${VARIANT}.txt"
+          cp /tmp/buildinfo.txt dist-win/BUILD-INFO.txt
+
           ./scripts/assemble_dist_config.sh dist-win/portable_config "$VARIANT" windows
           ( cd dist-win && zip -r -9 "../dist/$name.zip" . )
           echo "== zip ==" && ls -lh "dist/$name.zip"
@@ -256,9 +270,43 @@ jobs:
           merge-multiple: true
       - name: List assets
         run: ls -lhR artifacts
+
+      - name: Compose release notes (upstream versions)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$(ls artifacts/BUILD-INFO-*.txt 2>/dev/null)" \
+            || { echo "!! no BUILD-INFO files — cannot state upstream versions"; exit 1; }
+          {
+            echo "Portable, self-contained **mpv with TrueHD/Dolby Atmos (MAT) passthrough**."
+            echo "Linux (AppImage + tar.xz) and Windows (portable zip), in **stock** and **enhanced** variants."
+            echo
+            echo "### Upstream sources this release was built from"
+            echo
+            echo '```'
+            for f in artifacts/BUILD-INFO-*.txt; do
+              echo "[$(basename "$f" .txt | sed 's/^BUILD-INFO-//')]"
+              grep -E '^ +(mpv|FFmpeg|libplacebo):' "$f" || true
+              echo
+            done
+            echo '```'
+            echo
+            echo "Every download also ships a \`BUILD-INFO.txt\` containing the same record, so you can"
+            echo "verify offline exactly which upstream commits your binary was compiled from."
+            echo
+            echo "### Notes"
+            echo "- **TrueHD/Atmos passthrough is ON by default.** No receiver? See the README —"
+            echo "  comment out four lines in \`portable_config/mpv.conf\` to get normal PCM audio."
+            echo "- The **enhanced** build adds parallel segmented downloading, next-file prefetch and"
+            echo "  unselected-track caching. See [TUNING.md](https://github.com/JJenkx/mpv-atmos-patched/blob/main/TUNING.md)"
+            echo "  for what the flags do and how to size the caches without running out of RAM."
+          } > NOTES.md
+          cat NOTES.md
+
       - name: Create / update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          body_path: NOTES.md
           generate_release_notes: true
           fail_on_unmatched_files: true

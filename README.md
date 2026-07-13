@@ -45,6 +45,12 @@ whether the extra streaming features are compiled in.
   improvements (parallel segmented downloading, prefetch, in-buffer thumbnails,
   flat memory use over long playlists).
 
+> 📖 **Using the Enhanced build? Read [TUNING.md](TUNING.md).** It explains what each
+> custom flag does, how **more segmented workers fill your buffer faster** (and how to
+> find your ceiling using the live download-rate readout), and — importantly — **how to
+> raise the cache sizes incrementally and measure RAM** instead of setting them huge and
+> freezing your machine.
+
 > The **Atmos/TrueHD passthrough** comes from a patch to FFmpeg's `spdifenc`
 > (the MAT FIFO packer) and is present in **both** variants. It is independent of
 > AAC — no nonfree codecs are involved.
