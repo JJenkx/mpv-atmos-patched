@@ -195,6 +195,13 @@ jobs:
           fi
           command -v gendef >/dev/null 2>&1 && echo "gendef: $(command -v gendef)" \
             || { echo "!! gendef still missing"; exit 1; }
+          # dav1d's meson wants `llvm-dlltool` or a plain `dlltool`; Arch's
+          # mingw-w64-binutils only installs the target-prefixed one. Expose it
+          # under the unprefixed name (it is GNU dlltool for the PE target).
+          if ! command -v dlltool >/dev/null 2>&1; then
+            ln -sf /usr/bin/x86_64-w64-mingw32-dlltool /usr/local/bin/dlltool
+          fi
+          echo "dlltool: $(command -v dlltool)"
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
