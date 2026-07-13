@@ -327,8 +327,11 @@ jobs:
             echo "verify offline exactly which upstream commits your binary was compiled from."
             echo
             echo "### Notes"
-            echo "- **TrueHD/Atmos passthrough is ON by default.** No receiver? See the README —"
-            echo "  comment out four lines in \`portable_config/mpv.conf\` to get normal PCM audio."
+            echo "- **TrueHD/Atmos passthrough ships OFF** and needs one deliberate step: run"
+            echo "  \`mpv --audio-device=help\`, put your HDMI/AVR device in \`audio-device=\` in"
+            echo "  \`portable_config/mpv.conf\`, then uncomment the audio block. **Do not enable it"
+            echo "  without setting the device** — exclusive-mode spdif aimed at the wrong output can"
+            echo "  hang the machine. No receiver? Change nothing; you get normal PCM audio."
             echo "- The **enhanced** build adds parallel segmented downloading, next-file prefetch and"
             echo "  unselected-track caching. See [TUNING.md](https://github.com/JJenkx/mpv-atmos-patched/blob/main/TUNING.md)"
             echo "  for what the flags do and how to size the caches without running out of RAM."

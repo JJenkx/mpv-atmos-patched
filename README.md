@@ -115,21 +115,20 @@ Each build ships a small, curated `portable_config/mpv.conf` with sensible
 streaming defaults (the **enhanced** build additionally enables its patched
 options — segmented downloading, next-file prefetch, unselected-track caching).
 
-> ### ⚠️ TrueHD/Atmos passthrough is ON by default
-> These builds bitstream HD audio (TrueHD/Atmos MAT, DTS-HD, E-AC3, AC3, DTS)
-> straight to an **AVR/receiver or soundbar over HDMI**, using exclusive-mode audio
-> (WASAPI on Windows, ALSA on Linux). That's the point of this project.
+> ### 🔊 Turning on TrueHD/Atmos passthrough (2-minute setup)
+> Bitstreaming HD audio to a receiver is the point of this build, but it **ships
+> off**, because passthrough only works when it's aimed at *your* HDMI/AVR device —
+> and your AVR is almost never the system's default audio device. Enabling it
+> blindly doesn't just fail silently; on Linux, exclusive-mode spdif sent to the
+> wrong device **can hang your machine hard enough that it won't even reboot.**
 >
-> **If you do NOT have a receiver** — plain speakers, headphones, laptop or TV
-> audio — passthrough won't work and **you may get no sound**. Open
-> `portable_config/mpv.conf` and comment out (put `#` in front of) these four
-> lines to get normal PCM audio:
-> `ao=`, `audio-exclusive=`, `audio-spdif=`, `audio-buffer=`
+> So it's one deliberate step. In `portable_config/mpv.conf`:
+> 1. Find your receiver: `mpv --audio-device=help`
+>    (e.g. `alsa/hdmi:CARD=HDMI,DEV=0`, or `wasapi/{...}` on Windows)
+> 2. Put it in the `audio-device=` line
+> 3. Uncomment the rest of the audio block
 >
-> **If you DO have a receiver:** you'll likely also want to point mpv at the right
-> output. Run `mpv --audio-device=help`, find your HDMI/AVR device, and set
-> `audio-device=` in `mpv.conf` (it's commented out by default since it differs
-> per machine).
+> **No receiver?** Change nothing. You get normal PCM audio out of the box.
 
 The maintainer's full personal `mpv.conf` and `input.conf` ride along as
 `mpv.conf.example` / `input.conf.example` for reference — copy what you like.
