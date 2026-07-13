@@ -189,6 +189,7 @@ your driver. Every desktop already has these, but for the record mpv needs:
 | `libvulkan.so.1` | your GPU driver / Vulkan loader |
 | `libGL`, `libEGL`, `libdrm`, `libgbm` | your GPU driver / Mesa |
 | `libpulse`, `libasound` | your sound server (PulseAudio/PipeWire, ALSA) |
+| `libfontconfig`, `libfreetype` | your fonts (fontconfig reads *your* `/etc/fonts`) |
 | X11 / XCB / `libxkbcommon` | your desktop |
 | glibc, `libstdc++` | your system |
 
