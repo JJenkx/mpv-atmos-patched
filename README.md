@@ -51,9 +51,46 @@ whether the extra streaming features are compiled in.
 > raise the cache sizes incrementally and measure RAM** instead of setting them huge and
 > freezing your machine.
 
-> The **Atmos/TrueHD passthrough** comes from a patch to FFmpeg's `spdifenc`
-> (the MAT FIFO packer) and is present in **both** variants. It is independent of
-> AAC — no nonfree codecs are involved.
+> The **Atmos/TrueHD passthrough** comes from a patch to FFmpeg's `spdifenc` and is
+> present in **both** variants. It is independent of AAC — no nonfree codecs are
+> involved. See below for what it actually does.
+
+---
+
+## What the Atmos fix actually is (the Kodi MAT packer)
+
+**Short version: this is Kodi's MAT packer implementation, ported into FFmpeg.**
+
+To send Dolby TrueHD / Atmos to a receiver untouched, the bitstream has to be wrapped
+in **MAT** (Metadata-enhanced Audio Transmission) frames and then in IEC 61937 framing
+— that's the container HDMI uses to carry TrueHD to an AVR. FFmpeg does this in
+`libavformat/spdifenc.c`.
+
+**The problem with upstream FFmpeg:** its TrueHD path packs each frame into a
+fixed-size MAT container using a **small ring of output buffers**. A single call can
+emit *several* MAT frames, which can clobber a buffer that hasn't been sent yet. The
+result is the flaky TrueHD/Atmos passthrough people run into — dropouts, receivers
+that won't lock on, or audio that falls apart under timing pressure.
+
+**Kodi solved this years ago.** Its `CPackerMAT` uses a **FIFO output model** instead:
+one working buffer is assembled, each completed MAT frame is pushed onto a queue, and
+exactly one frame is drained per output call — so nothing is ever overwritten in
+flight. It also **pads through timing gaps** rather than resetting the packer on them,
+which is what keeps a receiver locked during discontinuities.
+
+This build ports that model into FFmpeg's `spdifenc.c`: the TrueHD path is rebuilt
+around an `AVFifo` of completed MAT frames, following Kodi's `CPackerMAT`. The MAT
+padding math is preserved. Everything else in `spdifenc.c` (AC3, DTS, E-AC3, DTS-HD…)
+is untouched upstream code.
+
+The patch is [`patches/spdifenc.c`](patches/spdifenc.c) — a drop-in replacement for
+FFmpeg's file, applied to **both** the stock and enhanced builds. It's the whole
+reason this project exists.
+
+> **Attribution / licensing:** the MAT FIFO model is derived from
+> [Kodi](https://github.com/xbmc/xbmc)'s `CPackerMAT` (GPL-2.0-or-later). FFmpeg's
+> `spdifenc.c` is LGPL-2.1-or-later. These builds are distributed as **GPLv3**, which
+> is compatible with both. Credit for the approach belongs to the Kodi project.
 
 ---
 

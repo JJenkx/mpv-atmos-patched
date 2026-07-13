@@ -54,6 +54,24 @@
  * Drop-in replacement for libavformat/spdifenc.c. Keep it in sync with the
  * FFmpeg version you build against and re-port the TrueHD MAT/FIFO changes if
  * the upstream muxer is updated.
+ *
+ * ----------------------------------------------------------------------------
+ * ATTRIBUTION AND LICENSING
+ * ----------------------------------------------------------------------------
+ * The TrueHD MAT FIFO output model implemented here is derived from the Kodi
+ * project's CPackerMAT (https://github.com/xbmc/xbmc), which is licensed
+ * GPL-2.0-or-later. Credit for the approach belongs to the Kodi developers.
+ *
+ * The surrounding file is FFmpeg's spdifenc.c, LGPL-2.1-or-later (see the
+ * header above, which is retained for the upstream code).
+ *
+ * Because this file combines LGPL-2.1-or-later code with material derived from
+ * GPL-2.0-or-later code, the FILE AS A WHOLE is effectively GPL: it may be used
+ * and redistributed under the GNU General Public License, version 2 or later.
+ * That is compatible with how these builds are shipped (FFmpeg configured with
+ * --enable-gpl --enable-version3, distributed as GPLv3), but it does mean this
+ * file must NOT be treated as LGPL, and it is not suitable for upstreaming to
+ * FFmpeg as-is without relicensing or a clean-room reimplementation.
  * ============================================================================
  */
 
