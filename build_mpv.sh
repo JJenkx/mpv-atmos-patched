@@ -772,34 +772,39 @@ make -j"$(nproc)" V=1
 make install
 popd >/dev/null
 
-# ── STEP 24b: wayland (Ubuntu 22.04 ships wayland/protocols too old for mpv) ──
-# mpv master needs wayland-client/cursor/scanner >= 1.23 and wayland-protocols
-# >= 1.38. Build them from source into the prefix only when the system's are too
-# old (Arch etc. skip this). Bundling a newer libwayland-client is safe — it
-# stays wire-compatible with any (older) compositor on the target machine.
-if pkg-config --atleast-version=1.23.0 wayland-client 2>/dev/null \
-   && pkg-config --atleast-version=1.38 wayland-protocols 2>/dev/null; then
-  echo "==> System wayland new enough; skipping wayland source build"
+# ── STEP 24b: wayland (mpv master outpaces Ubuntu 22.04 and released tags) ────
+# libwayland (client/cursor/scanner/egl): compile from source only when the
+# system's is too old (mpv needs >= 1.23). Bundling a newer libwayland-client is
+# wire-compatible with any (older) compositor on the target machine.
+if pkg-config --atleast-version=1.23.0 wayland-client 2>/dev/null; then
+  echo "==> System libwayland >= 1.23; using it"
 else
-  echo "==> Building newer wayland + wayland-protocols from source ..."
+  echo "==> Building libwayland from source ..."
   clone_or_update "https://gitlab.freedesktop.org/wayland/wayland.git" "$SRC_DIR/wayland" 1
   ensure_checkout "$SRC_DIR/wayland" "${WAYLAND_REF:-1.23.1}"
   pushd "$SRC_DIR/wayland" >/dev/null
+  rm -rf build
   meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release \
     -Ddefault_library=shared -Ddocumentation=false -Dtests=false
   meson compile -C build -j"$(nproc)"
   meson install -C build
   popd >/dev/null
   [ -f "$PREFIX/lib/libwayland-client.so" ] || { echo "!! wayland build failed"; exit 1; }
-
-  clone_or_update "https://gitlab.freedesktop.org/wayland/wayland-protocols.git" "$SRC_DIR/wayland-protocols" 1
-  ensure_checkout "$SRC_DIR/wayland-protocols" "${WAYLAND_PROTOCOLS_REF:-1.41}"
-  pushd "$SRC_DIR/wayland-protocols" >/dev/null
-  meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release -Dtests=false
-  meson install -C build
-  popd >/dev/null
-  pkg-config --atleast-version=1.38 wayland-protocols || { echo "!! wayland-protocols build failed"; exit 1; }
 fi
+
+# wayland-protocols: always install the latest from main. mpv master uses the
+# newest *staging* protocols (e.g. color-representation-v1) whose XML revisions
+# outrun any released tag or distro package. Data only (no compile) so it's cheap
+# to (re)install each run; the persistent workspace makes the fetch incremental.
+echo "==> Installing latest wayland-protocols (main) ..."
+clone_or_update "https://gitlab.freedesktop.org/wayland/wayland-protocols.git" "$SRC_DIR/wayland-protocols" 1
+ensure_checkout "$SRC_DIR/wayland-protocols" "${WAYLAND_PROTOCOLS_REF:-main}"
+pushd "$SRC_DIR/wayland-protocols" >/dev/null
+rm -rf build
+meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release -Dtests=false
+meson install -C build
+popd >/dev/null
+pkg-config --atleast-version=1.38 wayland-protocols || { echo "!! wayland-protocols build failed"; exit 1; }
 
 # ── STEP 24c: Vulkan headers + loader (Ubuntu 22.04's are too old for mpv) ────
 # mpv master needs vulkan >= 1.3.238; Ubuntu 22.04 ships 1.3.204. Build the
