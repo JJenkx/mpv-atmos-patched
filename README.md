@@ -1,5 +1,15 @@
 # mpv-atmos-patched
 
+> ### 🤖 Heads up: this is 100% vibe coded with Claude
+> The patches, build scripts, packaging and CI in this repo were all written with
+> AI assistance. It works and the binaries are tested, but I'm one person with a
+> receiver and a lot of enthusiasm — not a team of maintainers.
+>
+> **If you hit an issue, or have a suggestion, please tell me** — open an
+> [issue](https://github.com/JJenkx/mpv-atmos-patched/issues). Bug reports,
+> "this broke on my distro", config improvements, code review of the patches:
+> all genuinely welcome.
+
 Portable, self-contained builds of [mpv](https://mpv.io) with **TrueHD / Dolby
 Atmos (MAT) bitstream passthrough** compiled in — for **Linux** and **Windows**,
 built entirely in the open on GitHub Actions from the source in this repository.
