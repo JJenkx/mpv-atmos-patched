@@ -288,6 +288,38 @@ ensure_sonames() {
   shopt -u nullglob
 }
 
+# ── STEP: shaderc (SPIR-V compiler — libplacebo needs it for Vulkan) ──────────
+# MUST be built before libplacebo. Without it libplacebo silently builds with NO
+# SPIR-V compiler and Vulkan dies at runtime with "Failed initializing any SPIR-V
+# compiler!". This went unnoticed on Arch (which has shaderc system-wide); the
+# clean Ubuntu container has neither shaderc nor glslang.
+# Built static (libshaderc_combined.a) so libplacebo embeds it and there is
+# nothing extra to ship. PIC is required because it is linked into a shared lib.
+if built libshaderc_combined.a; then echo "==> shaderc already built, skipping"; else
+clone_or_update "$SHADERC_REPO" "$SHADERC_SRC" 1
+ensure_checkout "$SHADERC_SRC" "$SHADERC_REF"
+pushd "$SHADERC_SRC" >/dev/null
+retry python3 utils/git-sync-deps
+rm -rf build
+cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON \
+  -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+cmake --build build -j"$(nproc)"
+cmake --install build
+popd >/dev/null
+[ -f "$PREFIX/lib/libshaderc_combined.a" ] || { echo "!! shaderc build failed"; exit 1; }
+# libplacebo looks up pkg-config 'shaderc', but the static build only ships
+# shaderc_combined.pc. Synthesize shaderc.pc from it, pulling in libstdc++
+# (shaderc is C++, and it gets linked via a C driver).
+sed -e 's/^Name: shaderc_combined/Name: shaderc/' \
+    -e 's/^Libs: \(.*\)-lshaderc_combined\(.*\)$/Libs: \1-lshaderc_combined -lstdc++\2/' \
+  "$PREFIX/lib/pkgconfig/shaderc_combined.pc" > "$PREFIX/lib/pkgconfig/shaderc.pc"
+grep -q 'lstdc++' "$PREFIX/lib/pkgconfig/shaderc.pc" \
+  || sed -i 's/^Libs: .*/& -lstdc++/' "$PREFIX/lib/pkgconfig/shaderc.pc"
+fi
+
 # ── STEP: libplacebo (GPU shader / tone-mapping library for mpv) ──────────────
 if built libplacebo.so; then echo "==> libplacebo already built, skipping"; else
 clone_or_update "$LIBPLACEBO_REPO" "$LIBPLACEBO_SRC" 1
@@ -298,11 +330,18 @@ meson setup build . --libdir=lib \
   --prefix="$PREFIX" \
   --buildtype=release \
   -Ddefault_library=shared \
-  -Dvulkan=enabled
+  -Dvulkan=enabled \
+  -Dshaderc=enabled \
+  -Dlcms=enabled
 meson compile -C build -j"$(nproc)"
 meson install -C build
 popd >/dev/null
 [ -f "$PREFIX/lib/libplacebo.so" ] || { echo "!! libplacebo build failed"; exit 1; }
+# Guard against the silent-degradation that shipped a Vulkan-less build: assert
+# libplacebo really did pick up a SPIR-V compiler (and LittleCMS), rather than
+# quietly configuring them away.
+grep -qE '^#define PL_HAVE_SHADERC 1' "$PREFIX/include/libplacebo/config.h" 2>/dev/null \
+  || { echo "!! libplacebo built WITHOUT shaderc — Vulkan would fail at runtime"; exit 1; }
 fi
 
 # ── STEP 1: LuaJIT ───────────────────────────────────────────────────────────
