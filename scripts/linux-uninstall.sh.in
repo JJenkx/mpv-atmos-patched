@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Remove the desktop integration for @APPNAME@ (current user only).
+# Does NOT delete this folder — just unregisters it from the desktop.
+set -Eeuo pipefail
+
+APPID="@APPID@"
+APPNAME="@APPNAME@"
+APPDIR="$HOME/.local/share/applications"
+ICONBASE="$HOME/.local/share/icons/hicolor"
+DESKTOP="$APPDIR/$APPID.desktop"
+
+removed=0
+[ -f "$DESKTOP" ] && { rm -f "$DESKTOP"; removed=1; }
+for f in "$ICONBASE"/*/apps/"$APPID".png "$ICONBASE"/scalable/apps/"$APPID".svg; do
+  [ -f "$f" ] && { rm -f "$f"; removed=1; }
+done
+
+# Drop any default-handler associations pointing at us.
+MIMEAPPS="$HOME/.config/mimeapps.list"
+if [ -f "$MIMEAPPS" ] && grep -q "$APPID.desktop" "$MIMEAPPS" 2>/dev/null; then
+  sed -i "/=$APPID\.desktop$/d; s/$APPID\.desktop;//g" "$MIMEAPPS" 2>/dev/null || true
+  removed=1
+fi
+
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
+command -v gtk-update-icon-cache   >/dev/null 2>&1 && gtk-update-icon-cache -f -t "$ICONBASE" 2>/dev/null || true
+
+if [ "$removed" = 1 ]; then
+  echo "==> Removed the desktop entry for '$APPNAME'."
+  echo "    The folder itself is untouched — delete it yourself if you want it gone."
+else
+  echo "==> Nothing to remove ('$APPNAME' was not registered)."
+fi

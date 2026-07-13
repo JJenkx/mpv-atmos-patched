@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Desktop integration for @APPNAME@  (installs for the CURRENT USER only — no sudo).
+#
+# Why this is needed: GNOME/Nautilus cannot "browse" for an arbitrary executable in
+# its Open With dialog — it only lists applications that have a registered .desktop
+# entry. So a wrapper script sitting in this folder is invisible to the file manager
+# until it is registered. That is what this does.
+#
+# Installs:
+#   ~/.local/share/applications/@APPID@.desktop
+#   ~/.local/share/icons/hicolor/*/apps/@APPID@.{png,svg}
+#
+# Nothing is written outside your home directory, and your system mpv (if any) is
+# untouched — this uses its own app id, icon name and window class.
+#
+#   ./install.sh              register it (appears in "Open With")
+#   ./install.sh --default    ...and also make it the default player for media files
+#   ./uninstall.sh            remove it
+set -Eeuo pipefail
+
+APPID="@APPID@"
+APPNAME="@APPNAME@"
+HERE="$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)"
+EXEC="$HERE/mpv"
+
+SET_DEFAULT=0
+[ "${1:-}" = "--default" ] && SET_DEFAULT=1
+
+[ -x "$EXEC" ] || { echo "!! launcher not found/executable: $EXEC" >&2; exit 1; }
+
+APPDIR="$HOME/.local/share/applications"
+ICONBASE="$HOME/.local/share/icons/hicolor"
+DESKTOP="$APPDIR/$APPID.desktop"
+mkdir -p "$APPDIR"
+
+# Reuse mpv's own MimeType/Categories list rather than inventing one — it is the
+# authoritative set of media types mpv can actually play.
+SRC="$HERE/share/applications/mpv.desktop"
+MIMES="$(sed -n 's/^MimeType=//p'   "$SRC" 2>/dev/null | head -1)"
+CATS="$(sed -n  's/^Categories=//p' "$SRC" 2>/dev/null | head -1)"
+PROTOS="$(sed -n 's/^X-KDE-Protocols=//p' "$SRC" 2>/dev/null | head -1)"
+[ -n "$MIMES" ] || { echo "!! could not read MimeType from $SRC" >&2; exit 1; }
+[ -n "$CATS" ]  || CATS="AudioVideo;Audio;Video;Player;TV;"
+
+cat > "$DESKTOP" <<EOF
+[Desktop Entry]
+Type=Application
+Name=$APPNAME
+GenericName=Multimedia player
+Comment=TrueHD/Dolby Atmos passthrough build of mpv
+Icon=$APPID
+TryExec=$EXEC
+Exec=$EXEC --player-operation-mode=pseudo-gui -- %U
+Terminal=false
+Categories=$CATS
+MimeType=$MIMES
+StartupWMClass=$APPID
+StartupNotify=true
+Keywords=mpv;media;player;video;audio;atmos;truehd;
+EOF
+chmod 644 "$DESKTOP"
+
+# Icons, installed under our own name so they never collide with system mpv.
+for size in 16 32 64 128; do
+  src="$HERE/share/icons/hicolor/${size}x${size}/apps/mpv.png"
+  if [ -f "$src" ]; then
+    mkdir -p "$ICONBASE/${size}x${size}/apps"
+    cp -f "$src" "$ICONBASE/${size}x${size}/apps/$APPID.png"
+  fi
+done
+if [ -f "$HERE/share/icons/hicolor/scalable/apps/mpv.svg" ]; then
+  mkdir -p "$ICONBASE/scalable/apps"
+  cp -f "$HERE/share/icons/hicolor/scalable/apps/mpv.svg" "$ICONBASE/scalable/apps/$APPID.svg"
+fi
+
+# Refresh the desktop/icon caches (best-effort; harmless if the tools are absent).
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPDIR" 2>/dev/null || true
+command -v gtk-update-icon-cache   >/dev/null 2>&1 && gtk-update-icon-cache -f -t "$ICONBASE" 2>/dev/null || true
+
+echo "==> Installed '$APPNAME'"
+echo "    entry : $DESKTOP"
+echo "    runs  : $EXEC"
+
+if [ "$SET_DEFAULT" = 1 ]; then
+  if command -v xdg-mime >/dev/null 2>&1; then
+    n=0
+    # Split MimeType on ';' and claim each one as the default handler.
+    IFS=';' read -r -a types <<< "$MIMES"
+    for t in "${types[@]}"; do
+      [ -n "$t" ] || continue
+      xdg-mime default "$APPID.desktop" "$t" 2>/dev/null && n=$((n+1)) || true
+    done
+    echo "==> Set as the DEFAULT player for $n media types."
+  else
+    echo "!! xdg-mime not found; cannot set defaults. Use your file manager instead." >&2
+  fi
+else
+  echo
+  echo "    It now appears under right-click -> 'Open With'."
+  echo "    To make it the default for media files:  ./install.sh --default"
+fi
+
+echo
+echo "    NOTE: the entry points at this folder ($HERE)."
+echo "    If you move or rename it, re-run ./install.sh."

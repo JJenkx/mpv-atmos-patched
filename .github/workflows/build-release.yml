@@ -146,11 +146,30 @@ jobs:
           find "$top/bin" "$top/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
           cp /tmp/buildinfo.txt "$top/BUILD-INFO.txt"
+
+          # Per-variant desktop identity. Distinct app id / icon name / window class
+          # so both variants can be installed side by side and neither collides with
+          # a system mpv.
+          case "$VARIANT" in
+            stock)    APPID=mpv-atmos;          APPNAME="mpv (Atmos)" ;;
+            enhanced) APPID=mpv-enhanced-atmos; APPNAME="mpv (Enhanced + Atmos)" ;;
+          esac
+          for s in install uninstall; do
+            sed -e "s|@APPID@|$APPID|g" -e "s|@APPNAME@|$APPNAME|g" \
+              "scripts/linux-${s}.sh.in" > "$top/${s}.sh"
+            chmod +x "$top/${s}.sh"
+          done
+
           # bundle config (curated per variant) + a wrapper that guarantees it is used
           cp -a mpv.config "$top/portable_config"
           ./scripts/assemble_dist_config.sh "$top/portable_config" "$VARIANT" linux
-          cat > "$top/mpv" <<'EOF'
+          cat > "$top/mpv" <<EOF
           #!/bin/sh
+          # --wayland-app-id/--x11-name must match StartupWMClass in the .desktop file,
+          # or the taskbar shows a generic icon and groups us with the system mpv.
+          APPID="$APPID"
+          EOF
+          cat >> "$top/mpv" <<'EOF'
           HERE="$(dirname "$(readlink -f "$0")")"
           # Our bundled OpenSSL ships no CA store. Prefer the system trust store
           # (your distro keeps it current); fall back to the bundle we ship.
@@ -165,7 +184,8 @@ jobs:
             [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
           fi
           [ -z "${SSL_CERT_DIR:-}" ] && [ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
-          exec "$HERE/bin/mpv" --config-dir="$HERE/portable_config" "$@"
+          exec "$HERE/bin/mpv" --config-dir="$HERE/portable_config" \
+               --wayland-app-id="$APPID" --x11-name="$APPID" "$@"
           EOF
           chmod +x "$top/mpv"
 
@@ -190,8 +210,11 @@ jobs:
           cp /tmp/buildinfo.txt "$appdir/BUILD-INFO.txt"
           cp -a mpv.config "$appdir/usr/portable_config"
           ./scripts/assemble_dist_config.sh "$appdir/usr/portable_config" "$VARIANT" linux
-          cat > "$appdir/AppRun" <<'EOF'
+          cat > "$appdir/AppRun" <<EOF
           #!/bin/sh
+          APPID="$APPID"
+          EOF
+          cat >> "$appdir/AppRun" <<'EOF'
           HERE="$(dirname "$(readlink -f "$0")")"
           # Our bundled OpenSSL ships no CA store. Prefer the system trust store;
           # fall back to the bundle we ship.
@@ -206,17 +229,36 @@ jobs:
             [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
           fi
           [ -z "${SSL_CERT_DIR:-}" ] && [ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
-          exec "$HERE/usr/bin/mpv" --config-dir="$HERE/usr/portable_config" "$@"
+          exec "$HERE/usr/bin/mpv" --config-dir="$HERE/usr/portable_config" \
+               --wayland-app-id="$APPID" --x11-name="$APPID" "$@"
           EOF
           chmod +x "$appdir/AppRun"
-          # desktop + icon (reuse mpv's own if present)
-          if [ -f "$appdir/usr/share/applications/mpv.desktop" ]; then
-            cp "$appdir/usr/share/applications/mpv.desktop" "$appdir/mpv.desktop"
-          else
-            printf '[Desktop Entry]\nType=Application\nName=mpv (Atmos %s)\nExec=mpv %%U\nIcon=mpv\nCategories=AudioVideo;Player;\nTerminal=false\n' "$VARIANT" > "$appdir/mpv.desktop"
-          fi
+          # Desktop entry under OUR app id, so AppImage integrators (Gear Lever,
+          # AppImageLauncher...) show the right name and it does not collide with a
+          # system mpv. Reuse mpv's own MimeType list — it is the authoritative one.
+          SRC="$appdir/usr/share/applications/mpv.desktop"
+          MIMES="$(sed -n 's/^MimeType=//p' "$SRC" 2>/dev/null | head -1)"
+          CATS="$(sed -n 's/^Categories=//p' "$SRC" 2>/dev/null | head -1)"
+          [ -n "$CATS" ] || CATS="AudioVideo;Audio;Video;Player;TV;"
+          {
+            echo "[Desktop Entry]"
+            echo "Type=Application"
+            echo "Name=$APPNAME"
+            echo "GenericName=Multimedia player"
+            echo "Comment=TrueHD/Dolby Atmos passthrough build of mpv"
+            echo "Icon=$APPID"
+            echo "Exec=mpv --player-operation-mode=pseudo-gui -- %U"
+            echo "Terminal=false"
+            echo "Categories=$CATS"
+            [ -n "$MIMES" ] && echo "MimeType=$MIMES"
+            echo "StartupWMClass=$APPID"
+            echo "StartupNotify=true"
+          } > "$appdir/$APPID.desktop"
           icon=$(find "$appdir/usr/share/icons" -name 'mpv.png' | sort | tail -1 || true)
-          [ -n "$icon" ] && cp "$icon" "$appdir/mpv.png" && cp "$icon" "$appdir/.DirIcon" || true
+          if [ -n "$icon" ]; then
+            cp "$icon" "$appdir/$APPID.png"
+            cp "$icon" "$appdir/.DirIcon"
+          fi
 
           curl -fsSL -o /tmp/appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
@@ -262,9 +304,33 @@ jobs:
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
+        shell: bash
         run: |
+          set -Eeuo pipefail
           ./build_mpv_windows.sh
           ./collect_dlls.sh
+          # Finish the dist-win/ payload HERE, before anything consumes it. Both the
+          # installer and the portable zip ship this exact tree, so the curated config
+          # and BUILD-INFO must already be in place or the installer would bundle the
+          # raw, unassembled config.
+          test -d dist-win || { echo "!! dist-win/ not produced by collect_dlls.sh"; exit 1; }
+          ./scripts/build_info.sh mpv-win windows "$VARIANT" "${GITHUB_SHA:0:7}" > /tmp/buildinfo.txt
+          cat /tmp/buildinfo.txt
+          cp /tmp/buildinfo.txt dist-win/BUILD-INFO.txt
+          ./scripts/assemble_dist_config.sh dist-win/portable_config "$VARIANT" windows
+
+      - name: Build Windows installer (Inno Setup under wine)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # ISCC (Inno's compiler) is a 32-bit Windows binary, so wine needs 32-bit
+          # support -> Arch's [multilib] repo, which is off by default in the image.
+          grep -q '^\[multilib\]' /etc/pacman.conf || \
+            printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
+          pacman -Sy --noconfirm >/dev/null
+          pacman -S --noconfirm --needed wine
+          ./build_installer.sh "$VARIANT"
 
       - name: Package Windows zip
         if: matrix.platform == 'windows'
@@ -273,15 +339,13 @@ jobs:
           set -Eeuo pipefail
           name="mpv-atmos-${VARIANT}-windows-x86_64"
           rm -rf dist && mkdir -p dist
-          test -d dist-win || { echo "!! dist-win/ not produced by collect_dlls.sh"; ls -la; exit 1; }
-
-          # Record the exact upstream versions this binary was built from.
-          ./scripts/build_info.sh mpv-win windows "$VARIANT" "${GITHUB_SHA:0:7}" > /tmp/buildinfo.txt
-          cat /tmp/buildinfo.txt
-          cp /tmp/buildinfo.txt "dist/BUILD-INFO-windows-${VARIANT}.txt"
-          cp /tmp/buildinfo.txt dist-win/BUILD-INFO.txt
-
-          ./scripts/assemble_dist_config.sh dist-win/portable_config "$VARIANT" windows
+          # dist-win/ was fully prepared in the build step (config + BUILD-INFO).
+          cp dist-win/BUILD-INFO.txt "dist/BUILD-INFO-windows-${VARIANT}.txt"
+          # the installer (system OR portable, user picks) ...
+          setup="installer/Output/$( [ "$VARIANT" = enhanced ] && echo mpv-enhanced-atmos || echo mpv-atmos )-setup.exe"
+          [ -f "$setup" ] || { echo "!! installer not built: $setup"; ls -la installer/Output 2>/dev/null; exit 1; }
+          cp "$setup" "dist/mpv-atmos-${VARIANT}-windows-setup.exe"
+          # ... and the plain portable zip, for people who just want the folder
           ( cd dist-win && zip -r -9 "../dist/$name.zip" . )
           echo "== zip ==" && ls -lh "dist/$name.zip"
 

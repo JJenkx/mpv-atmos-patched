@@ -173,6 +173,45 @@ options — segmented downloading, next-file prefetch, unselected-track caching)
 > So it's one deliberate step — see below. **No receiver?** Change nothing; you get
 > normal PCM audio out of the box.
 
+### Installing / desktop integration
+
+Both platforms can be used **portable** (just extract and run) or **installed** so
+they show up in your system's menus and "Open with" lists. Both variants use their
+own name, icon and id — so they can coexist, and neither touches an existing mpv.
+
+| | Stock build | Enhanced build |
+|---|---|---|
+| App name | **mpv (Atmos)** | **mpv (Enhanced + Atmos)** |
+| Id | `mpv-atmos` | `mpv-enhanced-atmos` |
+
+**🪟 Windows —** run the **`…-windows-setup.exe`**. The installer asks which you want:
+
+- **System install** — into a folder you pick (browse or type the path), Start-menu
+  entry, appears in Windows **Default apps** / *Open with* under the name above,
+  and an uninstaller. It does **not** steal your existing file associations — you
+  opt in via Windows' own Default-apps screen.
+- **Portable install** — pure extraction to any folder. **No registry writes, no
+  uninstaller**, nothing outside that folder.
+
+Silent/scripted: `setup.exe /VERYSILENT /DIR="D:\apps\mpv"` (add `/PORTABLE=1` for
+portable mode). Or skip the installer entirely and use the plain `.zip`.
+
+**🐧 Linux —** extract the tarball, then from that folder:
+
+```bash
+./install.sh              # register it: appears under right-click → "Open With"
+./install.sh --default    # ...and also make it the default player for media files
+./uninstall.sh            # unregister (does not delete the folder)
+```
+
+This is **required** for file managers to see it: GNOME/Nautilus **cannot browse for
+an executable** — "Open With" only lists apps that have a registered desktop entry.
+`install.sh` writes one (plus icons) into `~/.local/share/` — **no `sudo`, nothing
+outside your home directory.** If you move the folder afterwards, re-run it.
+
+> The **AppImage** needs none of this — integration tools (Gear Lever,
+> AppImageLauncher) pick it up on their own, under the same name.
+
 ### Requirements
 
 **Windows:** none. Unzip and run — everything is in the folder.
