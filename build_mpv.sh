@@ -801,6 +801,33 @@ else
   pkg-config --atleast-version=1.38 wayland-protocols || { echo "!! wayland-protocols build failed"; exit 1; }
 fi
 
+# ── STEP 24c: Vulkan headers + loader (Ubuntu 22.04's are too old for mpv) ────
+# mpv master needs vulkan >= 1.3.238; Ubuntu 22.04 ships 1.3.204. Build the
+# Khronos headers + loader from source into the prefix, version-gated (Arch
+# skips). The loader is portable: at runtime it still discovers the target
+# system's GPU driver ICDs via the standard /usr/share/vulkan paths.
+if pkg-config --atleast-version=1.3.238 vulkan 2>/dev/null; then
+  echo "==> System vulkan new enough; skipping vulkan source build"
+else
+  echo "==> Building Vulkan-Headers + Vulkan-Loader from source ..."
+  clone_or_update "https://github.com/KhronosGroup/Vulkan-Headers.git" "$SRC_DIR/vulkan-headers" 1
+  ensure_checkout "$SRC_DIR/vulkan-headers" "${VULKAN_HEADERS_REF:-}"
+  pushd "$SRC_DIR/vulkan-headers" >/dev/null
+  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib
+  cmake --install build
+  popd >/dev/null
+
+  clone_or_update "https://github.com/KhronosGroup/Vulkan-Loader.git" "$SRC_DIR/vulkan-loader" 1
+  ensure_checkout "$SRC_DIR/vulkan-loader" "${VULKAN_LOADER_REF:-}"
+  pushd "$SRC_DIR/vulkan-loader" >/dev/null
+  cmake -B build -S . -DCMAKE_INSTALL_PREFIX="$PREFIX" -DCMAKE_INSTALL_LIBDIR=lib \
+    -DVULKAN_HEADERS_INSTALL_DIR="$PREFIX" -DBUILD_TESTS=OFF -DUPDATE_DEPS=OFF
+  cmake --build build -j"$(nproc)"
+  cmake --install build
+  popd >/dev/null
+  pkg-config --atleast-version=1.3.238 vulkan || { echo "!! vulkan build failed"; exit 1; }
+fi
+
 # ── STEP 25: mpv ─────────────────────────────────────────────────────────────
 clone_or_update "$MPV_REPO" "$MPV_SRC" 1
 # Start from a pristine tree so re-applying the segmented-http patch is clean.
