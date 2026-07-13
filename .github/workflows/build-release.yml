@@ -176,10 +176,25 @@ jobs:
       - name: Install mingw-w64 toolchain (Windows)
         if: matrix.platform == 'windows'
         run: |
+          set -e
           pacman -S --noconfirm --needed \
             mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers \
-            mingw-w64-winpthreads mingw-w64-tools \
-            base-devel curl cmake meson ninja pkgconf nasm yasm python-jinja
+            mingw-w64-winpthreads \
+            base-devel git curl cmake meson ninja pkgconf nasm yasm python-jinja
+          # gendef (needed for LuaJIT's import lib) ships in mingw-w64-tools, which
+          # is AUR-only on Arch and so unavailable in this container. It's a small
+          # autotools program in the mingw-w64 source tree — build it from source.
+          if ! command -v gendef >/dev/null 2>&1; then
+            echo "==> Building gendef from mingw-w64 source ..."
+            git clone --depth 1 https://github.com/mingw-w64/mingw-w64.git /tmp/mw64
+            cd /tmp/mw64/mingw-w64-tools/gendef
+            [ -x ./configure ] || autoreconf -fi
+            ./configure --prefix=/usr/local
+            make -j"$(nproc)"
+            make install
+          fi
+          command -v gendef >/dev/null 2>&1 && echo "gendef: $(command -v gendef)" \
+            || { echo "!! gendef still missing"; exit 1; }
 
       - name: Build (Windows)
         if: matrix.platform == 'windows'
