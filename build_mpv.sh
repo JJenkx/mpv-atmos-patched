@@ -727,50 +727,60 @@ popd >/dev/null
 fi
 
 # ── STEP 24: FFmpeg (TrueHD-patched) ─────────────────────────────────────────
-# Always rebuilt so the spdifenc.c patch is freshly applied.
+# Incremental: skip the full rebuild when the FFmpeg source HEAD, the spdifenc
+# patch, and the DISTRIBUTABLE config are all unchanged since the last successful
+# build (big win on a warm/persistent workspace). FORCE_FFMPEG=1 forces a rebuild.
 clone_or_update "$FFMPEG_REPO" "$FFMPEG_SRC" 1
 ensure_checkout "$FFMPEG_SRC" "$FFMPEG_REF"
-echo "==> Cleaning FFmpeg source tree ..."
-pushd "$FFMPEG_SRC" >/dev/null
-( make distclean || true ) || true
-git reset --hard
-git clean -fdx
-popd >/dev/null
-
-# Apply the patched spdifenc.c (TrueHD/Atmos MAT FIFO packer) after cleaning,
-# so it survives the clean and gets compiled into libavformat.
 SPDIF_PATCH="$SCRIPT_DIR/patches/spdifenc.c"
-if [ -f "$SPDIF_PATCH" ]; then
-  echo "==> Applying patched spdifenc.c (TrueHD MAT FIFO packer) ..."
-  cp -f "$SPDIF_PATCH" "$FFMPEG_SRC/libavformat/spdifenc.c"
+FF_STAMP="$PREFIX/.ffmpeg.stamp"
+FF_WANT="$(git -C "$FFMPEG_SRC" rev-parse HEAD 2>/dev/null):$( [ -f "$SPDIF_PATCH" ] && sha256sum "$SPDIF_PATCH" | cut -c1-16 || echo nopatch):D=$DISTRIBUTABLE"
+if [ "${FORCE_FFMPEG:-0}" != 1 ] && [ -f "$PREFIX/lib/libavcodec.so" ] \
+   && [ "$(cat "$FF_STAMP" 2>/dev/null)" = "$FF_WANT" ]; then
+  echo "==> FFmpeg unchanged (HEAD+patch+config); skipping rebuild"
 else
-  echo "!! Patch $SPDIF_PATCH not found; building with upstream spdifenc.c"
-fi
+  echo "==> Cleaning FFmpeg source tree ..."
+  pushd "$FFMPEG_SRC" >/dev/null
+  ( make distclean || true ) || true
+  git reset --hard
+  git clean -fdx
+  popd >/dev/null
 
-echo "==> Configuring FFmpeg ..."
-pushd "$FFMPEG_SRC" >/dev/null
-# nonfree/fdk-aac only for personal (non-distributable) builds. OpenSSL 3 is
-# Apache-2.0 (GPLv3-compatible) so --enable-openssl stays in both modes.
-FF_NONFREE=()
-if [ "$DISTRIBUTABLE" != 1 ]; then
-  FF_NONFREE=(--enable-nonfree --enable-libfdk-aac)
+  # Apply the patched spdifenc.c (TrueHD/Atmos MAT FIFO packer) after cleaning,
+  # so it survives the clean and gets compiled into libavformat.
+  if [ -f "$SPDIF_PATCH" ]; then
+    echo "==> Applying patched spdifenc.c (TrueHD MAT FIFO packer) ..."
+    cp -f "$SPDIF_PATCH" "$FFMPEG_SRC/libavformat/spdifenc.c"
+  else
+    echo "!! Patch $SPDIF_PATCH not found; building with upstream spdifenc.c"
+  fi
+
+  echo "==> Configuring FFmpeg ..."
+  pushd "$FFMPEG_SRC" >/dev/null
+  # nonfree/fdk-aac only for personal (non-distributable) builds. OpenSSL 3 is
+  # Apache-2.0 (GPLv3-compatible) so --enable-openssl stays in both modes.
+  FF_NONFREE=()
+  if [ "$DISTRIBUTABLE" != 1 ]; then
+    FF_NONFREE=(--enable-nonfree --enable-libfdk-aac)
+  fi
+  ./configure \
+    --prefix="$PREFIX" \
+    --enable-gpl --enable-version3 \
+    --enable-shared --enable-openssl \
+    "${FF_NONFREE[@]}" \
+    --enable-libx264 --enable-libx265 \
+    --enable-libvpx --enable-libopus --enable-libvorbis \
+    --enable-libass --enable-fontconfig --enable-libfreetype \
+    --enable-libbluray --enable-libwebp --enable-libtheora \
+    --enable-libopenjpeg --enable-libssh \
+    --enable-libdrm --enable-libpulse --enable-libxcb --enable-xlib \
+    --enable-lzma --enable-zlib --enable-bzlib \
+    --enable-rpath
+  make -j"$(nproc)" V=1
+  make install
+  popd >/dev/null
+  echo "$FF_WANT" > "$FF_STAMP"
 fi
-./configure \
-  --prefix="$PREFIX" \
-  --enable-gpl --enable-version3 \
-  --enable-shared --enable-openssl \
-  "${FF_NONFREE[@]}" \
-  --enable-libx264 --enable-libx265 \
-  --enable-libvpx --enable-libopus --enable-libvorbis \
-  --enable-libass --enable-fontconfig --enable-libfreetype \
-  --enable-libbluray --enable-libwebp --enable-libtheora \
-  --enable-libopenjpeg --enable-libssh \
-  --enable-libdrm --enable-libpulse --enable-libxcb --enable-xlib \
-  --enable-lzma --enable-zlib --enable-bzlib \
-  --enable-rpath
-make -j"$(nproc)" V=1
-make install
-popd >/dev/null
 
 # ── STEP 24b: wayland (mpv master outpaces Ubuntu 22.04 and released tags) ────
 # libwayland (client/cursor/scanner/egl): compile from source only when the
