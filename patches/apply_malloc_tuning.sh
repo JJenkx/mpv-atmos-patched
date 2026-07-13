@@ -72,6 +72,7 @@ awk '
     print "// been included, and main-fn.h includes none — without this the guard"
     print "// below is silently false and the mallopt calls compile to nothing."
     print "#include <stdlib.h>"
+    print "#include <limits.h>"
     print "#if defined(__GLIBC__)"
     print "#include <malloc.h>"
     print "#endif"
@@ -96,6 +97,16 @@ awk '
     print indent "// GPU driver (amdgpu_hmm_invalidate_gfx). See apply_malloc_tuning.sh."
     print indent "#if defined(__GLIBC__)"
     print indent "mallopt(M_ARENA_MAX, 2);"
+    print indent "// Never hand memory back to the kernel. libplacebo (>= ~v7.365) imports host"
+    print indent "// pointers straight into the GPU for frame uploads, so a page glibc unmaps may"
+    print indent "// still be registered with the GPU; the driver then oopses in its MMU-notifier"
+    print indent "// callback (amdgpu_hmm_invalidate_gfx) and wedges the machine in-kernel."
+    print indent "//   - M_MMAP_THRESHOLD at its ceiling keeps frame-sized buffers on the heap"
+    print indent "//     instead of in mmap segments that get munmapped on free."
+    print indent "//   - M_TRIM_THRESHOLD huge stops the heap itself being trimmed back."
+    print indent "// Cost: RSS plateaus rather than shrinking. That is the correct price."
+    print indent "mallopt(M_MMAP_THRESHOLD, 32 * 1024 * 1024);"
+    print indent "mallopt(M_TRIM_THRESHOLD, INT_MAX);"
     print indent "#endif"
     done = 1
   }
@@ -106,10 +117,15 @@ awk '
 # (bash exempts the left side of an && list), so a broken awk program would
 # otherwise print "applied" while silently producing an unpatched, ratcheting mpv.
 grep -qF 'mallopt(M_ARENA_MAX, 2);' "$F" \
-  || { echo "!! malloc-tuning patch: mallopt() was NOT inserted into $F"; exit 1; }
-grep -qF 'mallopt(M_TRIM_THRESHOLD' "$F" \
-  && { echo "!! malloc-tuning patch: mallopt(M_TRIM_THRESHOLD) must NOT be set — it disables"; \
-       echo "!! the dynamic mmap threshold, and munmapping GPU-imported buffers oopses the kernel"; \
-       exit 1; }
+  || { echo "!! malloc-tuning patch: mallopt(M_ARENA_MAX) was NOT inserted into $F"; exit 1; }
+grep -qF 'mallopt(M_MMAP_THRESHOLD, 32 * 1024 * 1024);' "$F" \
+  || { echo "!! malloc-tuning patch: mallopt(M_MMAP_THRESHOLD) was NOT inserted into $F"; exit 1; }
+# M_TRIM_THRESHOLD must be INT_MAX (trimming DISABLED). Setting it to a finite
+# size — as this patch originally did (128MiB) — makes glibc hand freed pages back
+# to the kernel, and unmapping a page libplacebo has imported into the GPU oopses
+# the driver (amdgpu_hmm_invalidate_gfx) and hard-hangs the machine.
+grep -qF 'mallopt(M_TRIM_THRESHOLD, INT_MAX);' "$F" \
+  || { echo "!! malloc-tuning patch: M_TRIM_THRESHOLD must be INT_MAX (trimming disabled)."; \
+       echo "!! A finite value lets glibc unmap GPU-imported pages -> kernel oops."; exit 1; }
 
 echo "==> malloc-tuning patch applied."
