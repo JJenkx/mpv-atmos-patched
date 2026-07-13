@@ -129,10 +129,19 @@ jobs:
           cp -a mpv/lib "$top/lib"
           cp -a mpv/share "$top/share"
           rm -rf "$top/lib/pkgconfig" "$top/share/man" "$top/include" || true
+          # The build dumps ~39 binaries into bin/ (glslang, spirv-*, bsdtar,
+          # cd-paranoia, x264, x265, openssl, luajit, vpxdec...). They are build
+          # byproducts we never use: pure bloat, and they have no RUNPATH so they
+          # also produce bogus "missing library" noise. Ship only the three we mean to.
+          find "$top/bin" -maxdepth 1 -type f -o -maxdepth 1 -type l \
+            | grep -vE '/(mpv|ffmpeg|ffprobe)$' | xargs -r rm -f
           # NEVER bundle the Vulkan loader: it is driver-coupled. Ours would shadow
           # the system loader via RUNPATH and then fail to find the machine's GPU
           # driver ICDs ("no suitable device"). The system loader must be used.
           rm -f "$top"/lib/libvulkan.so*
+          # Pull in the non-system libs we link but the target may not have
+          # (libXpresent, libXv, liblcms2, libxcb-shape on a stock Ubuntu 22.04).
+          ./scripts/bundle_deps.sh "$top"
           # strip debug info
           find "$top/bin" "$top/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
@@ -170,8 +179,12 @@ jobs:
           cp -a mpv/lib "$appdir/usr/lib"
           cp -a mpv/share "$appdir/usr/share"
           rm -rf "$appdir/usr/lib/pkgconfig" || true
+          # ship only the binaries we mean to (see the tarball step above)
+          find "$appdir/usr/bin" -maxdepth 1 -type f -o -maxdepth 1 -type l \
+            | grep -vE '/(mpv|ffmpeg|ffprobe)$' | xargs -r rm -f
           # Driver-coupled: must come from the host, never the bundle (see above).
           rm -f "$appdir"/usr/lib/libvulkan.so*
+          ./scripts/bundle_deps.sh "$appdir/usr"
           find "$appdir/usr/bin" "$appdir/usr/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
           cp /tmp/buildinfo.txt "$appdir/BUILD-INFO.txt"
