@@ -58,7 +58,8 @@ elif command -v apt-get >/dev/null 2>&1; then
     libvulkan-dev libdrm-dev
     libpulse-dev libasound2-dev
     libfreetype-dev libfontconfig1-dev libxml2-dev libpng-dev libuchardet-dev
-    libffi-dev libexpat1-dev
+    libffi-dev libexpat1-dev liblcms2-dev
+    ca-certificates
     zlib1g-dev liblzma-dev libbz2-dev
   )
   echo "==> Installing build dependencies via apt-get ..."
@@ -416,7 +417,14 @@ if built libssl.so; then echo "==> OpenSSL already built, skipping"; else
 clone_or_update "$OPENSSL_REPO" "$OPENSSL_SRC" 1
 ensure_checkout "$OPENSSL_SRC" "$OPENSSL_REF" no   # skip test-only quiche/boringssl submodules
 pushd "$OPENSSL_SRC" >/dev/null
-./config --prefix="$PREFIX" --openssldir="$PREFIX/ssl" --libdir=lib \
+# --openssldir must point at the SYSTEM trust store, not our prefix: it is baked
+# into libcrypto at compile time as the default CA location, and a prefix path
+# ("/__w/.../mpv/ssl") exists on no user's machine — every HTTPS connection then
+# fails with "certificate verify failed". /etc/ssl is correct on Debian/Ubuntu/
+# Arch/SUSE, and Fedora/RHEL symlink it. We use `make install_sw` below, so
+# nothing is ever written into /etc/ssl. The launcher additionally exports
+# SSL_CERT_FILE (system store preferred, bundled cacert.pem as fallback).
+./config --prefix="$PREFIX" --openssldir=/etc/ssl --libdir=lib \
   shared no-tests
 make -j"$(nproc)"
 make install_sw

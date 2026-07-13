@@ -129,6 +129,10 @@ jobs:
           cp -a mpv/lib "$top/lib"
           cp -a mpv/share "$top/share"
           rm -rf "$top/lib/pkgconfig" "$top/share/man" "$top/include" || true
+          # NEVER bundle the Vulkan loader: it is driver-coupled. Ours would shadow
+          # the system loader via RUNPATH and then fail to find the machine's GPU
+          # driver ICDs ("no suitable device"). The system loader must be used.
+          rm -f "$top"/lib/libvulkan.so*
           # strip debug info
           find "$top/bin" "$top/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
@@ -139,6 +143,19 @@ jobs:
           cat > "$top/mpv" <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "$0")")"
+          # Our bundled OpenSSL ships no CA store. Prefer the system trust store
+          # (your distro keeps it current); fall back to the bundle we ship.
+          if [ -z "${SSL_CERT_FILE:-}" ]; then
+            for _ca in /etc/ssl/certs/ca-certificates.crt \
+                       /etc/pki/tls/certs/ca-bundle.crt \
+                       /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do
+              [ -r "$_ca" ] && SSL_CERT_FILE="$_ca" && break
+            done
+            [ -z "${SSL_CERT_FILE:-}" ] && [ -r "$HERE/portable_config/cacert.pem" ] \
+              && SSL_CERT_FILE="$HERE/portable_config/cacert.pem"
+            [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
+          fi
+          [ -z "${SSL_CERT_DIR:-}" ] && [ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
           exec "$HERE/bin/mpv" --config-dir="$HERE/portable_config" "$@"
           EOF
           chmod +x "$top/mpv"
@@ -153,6 +170,8 @@ jobs:
           cp -a mpv/lib "$appdir/usr/lib"
           cp -a mpv/share "$appdir/usr/share"
           rm -rf "$appdir/usr/lib/pkgconfig" || true
+          # Driver-coupled: must come from the host, never the bundle (see above).
+          rm -f "$appdir"/usr/lib/libvulkan.so*
           find "$appdir/usr/bin" "$appdir/usr/lib" -type f \( -name '*.so*' -o -executable \) \
             -exec strip --strip-unneeded {} + 2>/dev/null || true
           cp /tmp/buildinfo.txt "$appdir/BUILD-INFO.txt"
@@ -161,6 +180,19 @@ jobs:
           cat > "$appdir/AppRun" <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "$0")")"
+          # Our bundled OpenSSL ships no CA store. Prefer the system trust store;
+          # fall back to the bundle we ship.
+          if [ -z "${SSL_CERT_FILE:-}" ]; then
+            for _ca in /etc/ssl/certs/ca-certificates.crt \
+                       /etc/pki/tls/certs/ca-bundle.crt \
+                       /etc/ssl/ca-bundle.pem /etc/ssl/cert.pem; do
+              [ -r "$_ca" ] && SSL_CERT_FILE="$_ca" && break
+            done
+            [ -z "${SSL_CERT_FILE:-}" ] && [ -r "$HERE/usr/portable_config/cacert.pem" ] \
+              && SSL_CERT_FILE="$HERE/usr/portable_config/cacert.pem"
+            [ -n "${SSL_CERT_FILE:-}" ] && export SSL_CERT_FILE
+          fi
+          [ -z "${SSL_CERT_DIR:-}" ] && [ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
           exec "$HERE/usr/bin/mpv" --config-dir="$HERE/usr/portable_config" "$@"
           EOF
           chmod +x "$appdir/AppRun"

@@ -30,5 +30,10 @@ case "$PLATFORM" in linux|windows) ;; *) echo "!! bad platform '$PLATFORM'"; exi
   cat "$DC/audio.$PLATFORM.conf"
 } > "$CFG/mpv.conf"
 
+# Ship a CA bundle on both platforms. Windows has no system trust store at all;
+# on Linux it is the fallback for distros whose store isn't where our bundled
+# OpenSSL looks (the launcher prefers the system store when it finds one).
+[ -f "$DC/cacert.pem" ] && cp -f "$DC/cacert.pem" "$CFG/cacert.pem"
+
 echo "==> assembled $VARIANT/$PLATFORM active mpv.conf ($(grep -c . "$CFG/mpv.conf") non-blank lines)"
 echo "    examples present: $(cd "$CFG" && ls *.example 2>/dev/null | tr '\n' ' ')"
