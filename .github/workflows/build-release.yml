@@ -332,15 +332,64 @@ jobs:
             echo "of all ~29 libraries built from source — so you can verify offline precisely what went"
             echo "into your binary. The same files are attached below as \`BUILD-INFO-<platform>-<variant>.txt\`."
             echo
-            echo "### Notes"
-            echo "- **TrueHD/Atmos passthrough ships OFF** and needs one deliberate step: run"
-            echo "  \`mpv --audio-device=help\`, put your HDMI/AVR device in \`audio-device=\` in"
-            echo "  \`portable_config/mpv.conf\`, then uncomment the audio block. **Do not enable it"
-            echo "  without setting the device** — exclusive-mode spdif aimed at the wrong output can"
-            echo "  hang the machine. No receiver? Change nothing; you get normal PCM audio."
-            echo "- The **enhanced** build adds parallel segmented downloading, next-file prefetch and"
-            echo "  unselected-track caching. See [TUNING.md](https://github.com/JJenkx/mpv-atmos-patched/blob/main/TUNING.md)"
-            echo "  for what the flags do and how to size the caches without running out of RAM."
+            echo "---"
+            echo
+            echo "## Getting started"
+            echo
+            echo "### 🪟 Windows"
+            echo "Unzip anywhere and run **\`mpv.exe\`** (or drag a video onto it). Fully portable —"
+            echo "no installer, no registry writes."
+            echo
+            echo "> ⚠️ **For anything on the command line, use \`mpv.com\`, not \`mpv.exe\`.**"
+            echo "> \`mpv.exe\` is the windowed player and prints **nothing** to the console."
+            echo "> \`mpv.com\` is the identical player *with* console output."
+            echo
+            echo "Open PowerShell in the unzipped folder (in Explorer: **Shift + Right-click** →"
+            echo "*Open in Terminal*), then:"
+            echo '```powershell'
+            echo '.\mpv.com --audio-device=help      # list your audio devices'
+            echo '.\mpv.com --version                # version / build info'
+            echo '.\mpv.com "C:\path\to\movie.mkv"   # play, with log output visible'
+            echo '```'
+            echo
+            echo "### 🐧 Linux"
+            echo "**AppImage:** \`chmod +x mpv-atmos-*.AppImage && ./mpv-atmos-*.AppImage <file>\`"
+            echo "**Tarball:** extract, then run the \`mpv\` launcher in the folder:"
+            echo '```bash'
+            echo 'tar xf mpv-atmos-*.tar.xz && cd mpv-atmos-*'
+            echo './mpv --audio-device=help          # list your audio devices'
+            echo './mpv /path/to/movie.mkv           # play'
+            echo '```'
+            echo
+            echo "## 🔊 Turning on TrueHD/Atmos passthrough"
+            echo
+            echo "**Passthrough ships OFF.** It only works when aimed at *your* HDMI/AVR device, and"
+            echo "your receiver is almost never the system's default audio device."
+            echo
+            echo "> ⚠️ **Do not just uncomment the audio block — you MUST also set \`audio-device\`.**"
+            echo "> Exclusive-mode spdif sent to the wrong output gives you no sound at best, and on"
+            echo "> Linux **can hang the machine hard enough that it won't even reboot.**"
+            echo
+            echo "1. **List your devices** — Windows: \`.\\mpv.com --audio-device=help\` ·"
+            echo "   Linux: \`./mpv --audio-device=help\`"
+            echo "2. **Copy your receiver's device string** (e.g. \`wasapi/{0.0.1.00000000}.{…}\` on"
+            echo "   Windows, \`alsa/hdmi:CARD=HDMI,DEV=0\` on Linux)."
+            echo "3. **Edit \`portable_config/mpv.conf\`**: paste it into the \`audio-device=\` line, then"
+            echo "   remove the leading \`#\` from that line **and** from \`ao=\`, \`audio-channels=\`,"
+            echo "   \`audio-exclusive=\`, \`audio-spdif=\`, \`audio-buffer=\`."
+            echo "4. **Play something** — your receiver should display *Atmos / TrueHD / DTS-HD*."
+            echo "   Press \`i\` in mpv for the stats overlay."
+            echo
+            echo "The \`mpv.conf\` in your download walks you through this too, with the exact lines."
+            echo
+            echo "**No receiver?** Change nothing — you get normal PCM audio out of the box."
+            echo
+            echo "## Enhanced vs stock"
+            echo "**Enhanced** adds parallel segmented downloading, next-file prefetch, in-process"
+            echo "thumbnails and unselected-track caching. See"
+            echo "[TUNING.md](https://github.com/JJenkx/mpv-atmos-patched/blob/main/TUNING.md) for what"
+            echo "the flags do and how to size the caches without running out of RAM."
+            echo "**Stock** is plain upstream mpv + the Atmos fix, nothing else."
           } > NOTES.md
           cat NOTES.md
 
