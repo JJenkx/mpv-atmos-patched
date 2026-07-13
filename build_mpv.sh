@@ -811,7 +811,16 @@ clone_or_update "https://gitlab.freedesktop.org/wayland/wayland-protocols.git" "
 ensure_checkout "$SRC_DIR/wayland-protocols" "${WAYLAND_PROTOCOLS_REF:-main}"
 pushd "$SRC_DIR/wayland-protocols" >/dev/null
 rm -rf build
-meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release -Dtests=false
+# Install the XML data + pkgconfig only. wayland-protocols would otherwise
+# generate per-protocol enum headers whenever wayland-scanner is found, but the
+# newest staging protocols need a newer scanner than we bundle — and mpv scans
+# the XMLs itself and never uses those headers. Hiding wayland-scanner
+# (its lookup is required:tests=false) skips that generation cleanly.
+# PKG_CONFIG_LIBDIR="" replaces the whole pkg-config search path (PKG_CONFIG_PATH
+# alone still hits the default system dirs), so wayland-scanner genuinely isn't
+# found and the enum-header generation is skipped.
+PKG_CONFIG_LIBDIR="" PKG_CONFIG_PATH="" meson setup build . --libdir=lib \
+  --prefix="$PREFIX" --buildtype=release -Dtests=false
 meson install -C build
 popd >/dev/null
 pkg-config --atleast-version=1.38 wayland-protocols || { echo "!! wayland-protocols build failed"; exit 1; }
