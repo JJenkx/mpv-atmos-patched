@@ -44,6 +44,12 @@ is_excluded() {
     # sound servers + system daemons — must be the host's
     libasound.so*|libpulse*.so*|libjack*.so*|libpipewire*.so*|\
     libudev.so*|libsystemd.so*|libcap.so*|libselinux.so*|libdbus*.so*) return 0 ;;
+    # fontconfig reads the HOST's /etc/fonts. A bundled (older) fontconfig cannot
+    # parse a newer host's config — on Arch it spews "invalid attribute 'xsi:nil'"
+    # for every conf.d file and mis-resolves fonts. It, and freetype alongside it,
+    # must come from the system. (Every desktop has both.) libbrotli* is only
+    # pulled in as freetype's dependency, so it drops out with it.
+    libfontconfig.so*|libfreetype.so*|libbrotli*.so*) return 0 ;;
     # xkb/wayland: we bundle wayland ourselves (deliberately, as a superset) —
     # leave whatever is already in lib/ alone, but never pull in the host's.
     libxkbcommon*.so*) return 0 ;;
