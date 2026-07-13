@@ -40,7 +40,6 @@ if [[ "${MPV_PLAYLIST:-0}" = "1" && $# -ge 1 ]]; then
   set -- --playlist "$1" "${@:2}"
 fi
 
-LOCK_TITLE_LUA="$APPDIR/app_config/lock-title.lua"
 
 # Hardcode IDs
 APP_ID="mpv-patched"
@@ -55,7 +54,6 @@ exec "$MPV_BIN" \
   --reset-on-next-file=force-media-title \
   --wayland-app-id="$APP_ID" \
   --x11-name="$APP_ID" \
-  ${LOCK_TITLE_LUA:+--script="$LOCK_TITLE_LUA"} \
   --input-ipc-server="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/mpv.sock" \
   "${EXTRA_FLAGS[@]}" \
   "$@"

@@ -40,8 +40,7 @@ Silent flags: `/VERYSILENT /PORTABLE=1 /DIR="D:\apps\mpv"`.
   spdif/TrueHD-MAT bitstreaming. Pick your HDMI device via
   `mpv --audio-device=help` and set `audio-device=` in `mpv.conf`.
 - IPC: named pipe `\\.\pipe\mpv-socket` (was a Unix socket).
-- Launcher flags migrated into `mpv.conf`; `lock-title` runs from
-  `portable_config/scripts/00-lock-title.lua` with drive-letter/UNC support.
+- Launcher flags migrated into `mpv.conf`.
 - Shader hotkeys (F1–F4, `\`, `]`) fixed to portable `~~/shaders/` paths
   (they pointed at `~/.config/mpv/...` before and were broken even on Linux).
 - **Activated**: `autoload.lua`, `playlistmanager.lua` (were inert at config root).
