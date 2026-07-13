@@ -173,6 +173,39 @@ options — segmented downloading, next-file prefetch, unselected-track caching)
 > So it's one deliberate step — see below. **No receiver?** Change nothing; you get
 > normal PCM audio out of the box.
 
+### Requirements
+
+**Windows:** none. Unzip and run — everything is in the folder.
+
+**Linux:** on a normal desktop, **nothing to install.** The build bundles its own
+FFmpeg, codecs, libass, OpenSSL, wayland, etc.
+
+It deliberately does *not* bundle libraries that must come from **your** system —
+your GPU driver links the same ones, and a bundled copy would shadow it and break
+your driver. Every desktop already has these, but for the record mpv needs:
+
+| Library | Provided by |
+|---|---|
+| `libvulkan.so.1` | your GPU driver / Vulkan loader |
+| `libGL`, `libEGL`, `libdrm`, `libgbm` | your GPU driver / Mesa |
+| `libpulse`, `libasound` | your sound server (PulseAudio/PipeWire, ALSA) |
+| X11 / XCB / `libxkbcommon` | your desktop |
+| glibc, `libstdc++` | your system |
+
+If mpv exits with something like `libvulkan.so.1: cannot open shared object file`
+(only likely on a *minimal* or headless install), install the missing bits:
+
+```bash
+# Debian / Ubuntu
+sudo apt install libvulkan1 libpulse0 libasound2 libgl1 libegl1
+
+# Fedora
+sudo dnf install vulkan-loader pulseaudio-libs alsa-lib mesa-libGL mesa-libEGL
+
+# Arch
+sudo pacman -S vulkan-icd-loader libpulse alsa-lib libglvnd
+```
+
 ### Enabling passthrough — Windows
 
 1. **Open PowerShell** (or Command Prompt) **in the folder you unzipped.**
