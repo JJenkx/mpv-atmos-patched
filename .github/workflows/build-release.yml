@@ -195,12 +195,17 @@ jobs:
           fi
           command -v gendef >/dev/null 2>&1 && echo "gendef: $(command -v gendef)" \
             || { echo "!! gendef still missing"; exit 1; }
-          # dav1d's meson wants `llvm-dlltool` or a plain `dlltool`; Arch's
-          # mingw-w64-binutils only installs the target-prefixed one. Expose it
-          # under the unprefixed name (it is GNU dlltool for the PE target).
-          if ! command -v dlltool >/dev/null 2>&1; then
-            ln -sf /usr/bin/x86_64-w64-mingw32-dlltool /usr/local/bin/dlltool
-          fi
+          # dav1d/libplacebo look for `llvm-dlltool` first, then a plain `dlltool`.
+          # Arch's mingw-w64-binutils only ships the target-prefixed dlltool, and a
+          # bare symlink to it breaks: GNU dlltool shells out to plain `as`, which
+          # is the HOST (ELF) assembler and cannot represent PE relocs
+          # (BFD_RELOC_RVA). So install llvm (self-contained llvm-dlltool) AND
+          # provide a correct `dlltool` wrapper that forces the mingw assembler.
+          pacman -S --noconfirm --needed llvm
+          printf '#!/bin/sh\nexec /usr/bin/x86_64-w64-mingw32-dlltool -S /usr/bin/x86_64-w64-mingw32-as "$@"\n' \
+            > /usr/local/bin/dlltool
+          chmod +x /usr/local/bin/dlltool
+          echo "llvm-dlltool: $(command -v llvm-dlltool)"
           echo "dlltool: $(command -v dlltool)"
 
       - name: Build (Windows)
