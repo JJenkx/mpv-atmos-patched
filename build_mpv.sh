@@ -58,6 +58,7 @@ elif command -v apt-get >/dev/null 2>&1; then
     libvulkan-dev libdrm-dev
     libpulse-dev libasound2-dev
     libfreetype-dev libfontconfig1-dev libxml2-dev libpng-dev libuchardet-dev
+    libffi-dev libexpat1-dev
     zlib1g-dev liblzma-dev libbz2-dev
   )
   echo "==> Installing build dependencies via apt-get ..."
@@ -198,7 +199,7 @@ for c in git curl tar make gcc python3 cmake meson ninja pkg-config perl autocon
 [ "$MISSING" = "1" ] && { echo "Install missing tools and re-run."; exit 2; }
 
 export PATH="$PREFIX/bin:$PATH"
-export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 export LD_LIBRARY_PATH="$PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export CFLAGS="${CFLAGS:-} -fPIC"
 export CXXFLAGS="${CXXFLAGS:-} -fPIC"
@@ -770,6 +771,35 @@ fi
 make -j"$(nproc)" V=1
 make install
 popd >/dev/null
+
+# ── STEP 24b: wayland (Ubuntu 22.04 ships wayland/protocols too old for mpv) ──
+# mpv master needs wayland-client/cursor/scanner >= 1.23 and wayland-protocols
+# >= 1.38. Build them from source into the prefix only when the system's are too
+# old (Arch etc. skip this). Bundling a newer libwayland-client is safe — it
+# stays wire-compatible with any (older) compositor on the target machine.
+if pkg-config --atleast-version=1.23.0 wayland-client 2>/dev/null \
+   && pkg-config --atleast-version=1.38 wayland-protocols 2>/dev/null; then
+  echo "==> System wayland new enough; skipping wayland source build"
+else
+  echo "==> Building newer wayland + wayland-protocols from source ..."
+  clone_or_update "https://gitlab.freedesktop.org/wayland/wayland.git" "$SRC_DIR/wayland" 1
+  ensure_checkout "$SRC_DIR/wayland" "${WAYLAND_REF:-1.23.1}"
+  pushd "$SRC_DIR/wayland" >/dev/null
+  meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release \
+    -Ddefault_library=shared -Ddocumentation=false -Dtests=false
+  meson compile -C build -j"$(nproc)"
+  meson install -C build
+  popd >/dev/null
+  [ -f "$PREFIX/lib/libwayland-client.so" ] || { echo "!! wayland build failed"; exit 1; }
+
+  clone_or_update "https://gitlab.freedesktop.org/wayland/wayland-protocols.git" "$SRC_DIR/wayland-protocols" 1
+  ensure_checkout "$SRC_DIR/wayland-protocols" "${WAYLAND_PROTOCOLS_REF:-1.41}"
+  pushd "$SRC_DIR/wayland-protocols" >/dev/null
+  meson setup build . --libdir=lib --prefix="$PREFIX" --buildtype=release -Dtests=false
+  meson install -C build
+  popd >/dev/null
+  pkg-config --atleast-version=1.38 wayland-protocols || { echo "!! wayland-protocols build failed"; exit 1; }
+fi
 
 # ── STEP 25: mpv ─────────────────────────────────────────────────────────────
 clone_or_update "$MPV_REPO" "$MPV_SRC" 1
