@@ -793,10 +793,10 @@ else
   git clean -fdx
   popd >/dev/null
 
-  # Apply the patched spdifenc.c (TrueHD/Atmos MAT FIFO packer) after cleaning,
-  # so it survives the clean and gets compiled into libavformat.
+  # Apply the patched spdifenc.c (TrueHD/Atmos MAT padding fix, FFmpeg PR #23542)
+  # after cleaning, so it survives the clean and gets compiled into libavformat.
   if [ -f "$SPDIF_PATCH" ]; then
-    echo "==> Applying patched spdifenc.c (TrueHD MAT FIFO packer) ..."
+    echo "==> Applying patched spdifenc.c (TrueHD MAT padding fix, FFmpeg PR #23542) ..."
     cp -f "$SPDIF_PATCH" "$FFMPEG_SRC/libavformat/spdifenc.c"
   else
     echo "!! Patch $SPDIF_PATCH not found; building with upstream spdifenc.c"

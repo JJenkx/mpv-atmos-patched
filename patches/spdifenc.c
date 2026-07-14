@@ -38,40 +38,36 @@
  * TrueHD/MLP) and wraps them in the IEC 61937 data-burst framing required to
  * pass a bitstream, untouched, over S/PDIF or HDMI to an external decoder.
  *
- * The only change from upstream FFmpeg is in the Dolby TrueHD path
- * (spdif_header_truehd + the MAT packing helpers below). Upstream packs each
- * TrueHD frame into a fixed-size MAT container using a small ring of N output
- * buffers; when a single input packet straddles a large timing gap it can flush
- * several MAT frames in one call and clobber a buffer that has not yet been
- * sent. This patch replaces that with a FIFO output model ported from Kodi's
- * CPackerMAT: one working buffer is assembled, each completed MAT frame is
- * pushed onto an AVFifo (ctx->mat_fifo), and the muxer drains exactly one
- * finished frame per packet, so no not-yet-sent frame is ever overwritten.
- * Seek/discontinuity handling is also loosened to tolerate large-but-plausible
- * timing gaps instead of resetting on them. The MAT padding math itself is
- * unchanged from upstream.
+ * The only change from upstream FFmpeg master is in the Dolby TrueHD path.
+ * This file is FFmpeg master's spdifenc.c with the (at the time of writing,
+ * not yet merged) upstream pull request #23542 applied:
+ *
+ *   "avformat/spdifenc: preserve TrueHD MAT padding across branches"
+ *   by Nathan Lucas — https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls/23542
+ *   Fixes: https://trac.ffmpeg.org/ticket/9569
+ *   Fixes: https://trac.ffmpeg.org/ticket/10948
+ *   See also: https://github.com/mpv-player/mpv/issues/9659
+ *   See also: https://github.com/mpv-player/mpv/issues/13943
+ *
+ * What it fixes: upstream packed each TrueHD frame into fixed-size MAT
+ * containers via two ping-pong buffers and rejected padding gaps larger than
+ * MAT_FRAME_SIZE / 2. Seamless-branching Blu-ray remuxes contain larger
+ * input_timing gaps, and some branches have discontinuous timing entirely.
+ * Dropped padding breaks the MAT timing and the IEC 61937 carrier cadence,
+ * causing TrueHD/Atmos dropouts on some receivers. The patch (a) queues
+ * completed MAT frames in a ring of buffers and writes at most one per input
+ * packet so no unsent frame is ever clobbered, (b) accepts padding gaps up to
+ * two full MAT frames, and (c) parses output_timing from TrueHD restart
+ * headers to compute correct padding across timing discontinuities instead of
+ * resetting. The MAT padding math itself is unchanged.
+ *
+ * This replaces the previous Kodi-derived (GPL) MAT FIFO patch that used to
+ * live in this file; the whole file is now plain upstream FFmpeg code,
+ * LGPL-2.1-or-later, with no third-party additions.
  *
  * Drop-in replacement for libavformat/spdifenc.c. Keep it in sync with the
- * FFmpeg version you build against and re-port the TrueHD MAT/FIFO changes if
- * the upstream muxer is updated.
- *
- * ----------------------------------------------------------------------------
- * ATTRIBUTION AND LICENSING
- * ----------------------------------------------------------------------------
- * The TrueHD MAT FIFO output model implemented here is derived from the Kodi
- * project's CPackerMAT (https://github.com/xbmc/xbmc), which is licensed
- * GPL-2.0-or-later. Credit for the approach belongs to the Kodi developers.
- *
- * The surrounding file is FFmpeg's spdifenc.c, LGPL-2.1-or-later (see the
- * header above, which is retained for the upstream code).
- *
- * Because this file combines LGPL-2.1-or-later code with material derived from
- * GPL-2.0-or-later code, the FILE AS A WHOLE is effectively GPL: it may be used
- * and redistributed under the GNU General Public License, version 2 or later.
- * That is compatible with how these builds are shipped (FFmpeg configured with
- * --enable-gpl --enable-version3, distributed as GPLv3), but it does mean this
- * file must NOT be treated as LGPL, and it is not suitable for upstreaming to
- * FFmpeg as-is without relicensing or a clean-room reimplementation.
+ * FFmpeg master you build against; drop it entirely once PR #23542 (or an
+ * equivalent) is merged upstream.
  * ============================================================================
  */
 
@@ -100,9 +96,19 @@
 #include "libavcodec/adts_parser.h"
 #include "libavcodec/dca.h"
 #include "libavcodec/dca_syncwords.h"
-#include "libavutil/fifo.h"
+#include "libavcodec/get_bits.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
+
+/*
+ * With padding up to MAT_FRAME_SIZE*2 allowed, TrueHD/MLP can complete two MAT
+ * buffers with one AVPacket. A third is needed for the active buffer, so no
+ * less than three are required. Since no more than one MAT can be written per
+ * AVPacket, extra headroom has been given.
+ *
+ * E-AC-3 and DTS-HD only need hd_buf[0].
+ */
+#define HD_BUF_COUNT 6
 
 typedef struct IEC61937Context {
     const AVClass *av_class;
@@ -118,21 +124,22 @@ typedef struct IEC61937Context {
     int use_preamble;               ///< preamble enabled (disabled for exactly pre-padded DTS)
     int extra_bswap;                ///< extra bswap for payload (for LE DTS => standard BE DTS)
 
-    uint8_t *hd_buf[2];             ///< allocated buffers to concatenate hd audio frames (eac3, dts4)
+    uint8_t *hd_buf[HD_BUF_COUNT];  ///< allocated buffers to concatenate hd audio frames
     int hd_buf_size;                ///< size of the hd audio buffer (eac3, dts4)
     int hd_buf_count;               ///< number of frames in the hd audio buffer (eac3)
-    int hd_buf_filled;              ///< amount of bytes in the hd audio buffer (eac3)
+    int hd_buf_filled;              ///< amount of bytes in the hd audio buffer (eac3, truehd)
+    int hd_buf_idx;                 ///< active hd buffer index (truehd)
+    int hd_buf_next_ready_idx;      ///< oldest completed truehd MAT buffer ready to write (truehd)
+    int hd_buf_ready_count;         ///< number of completed TrueHD MAT buffers ready to write (truehd)
 
     int dtshd_skip;                 ///< counter used for skipping DTS-HD frames
 
-    /* TrueHD MAT packer (FIFO output model, ported from Kodi's CPackerMAT) */
-    uint8_t *mat_buf;               ///< working buffer for the MAT frame currently being assembled
-    int mat_buf_filled;             ///< amount of bytes written into mat_buf so far
-    uint8_t *mat_out;               ///< scratch buffer holding the MAT frame currently being emitted
-    AVFifo *mat_fifo;               ///< queue of completed MAT frames awaiting output
     uint16_t truehd_prev_time;      ///< input_timing from the last frame
     int truehd_prev_size;           ///< previous frame size in bytes, including any MAT codes
     int truehd_samples_per_frame;   ///< samples per frame for padding calculation
+    uint16_t truehd_output_timing;  ///< expected output_timing for truehd restart headers
+    int truehd_output_timing_valid; ///< restart header output_timing has been read
+    int truehd_oi_delta;            ///< signed (output_timing-samples_per_frame)-input_timing
 
     /* AVOptions: */
     int dtshd_rate;
@@ -276,7 +283,7 @@ static int spdif_header_dts4(AVFormatContext *s, AVPacket *pkt, int core_size,
              * (dtshd_fallback == 0) */
             ctx->dtshd_skip = 1;
     }
-    if (ctx->dtshd_skip && core_size) {
+    if (ctx->dtshd_skip && core_size && core_size <= pkt->size) {
         pkt_size = core_size;
         if (ctx->dtshd_fallback >= 0)
             --ctx->dtshd_skip;
@@ -444,24 +451,6 @@ static int spdif_header_aac(AVFormatContext *s, AVPacket *pkt)
 /*
  * It seems Dolby TrueHD frames have to be encapsulated in MAT frames before
  * they can be encapsulated in IEC 61937.
- *
- * A MAT frame is a fixed-size (MAT_PKT_OFFSET) container into which a sequence
- * of TrueHD audio frames is packed. Frames are padded according to their
- * input_timing field, so that the average bitrate stays constant even though
- * individual (Atmos) frames vary in size and can momentarily exceed the nominal
- * 2560-byte slot. The padding math below is unchanged from upstream FFmpeg.
- *
- * The buffer model here is ported from Kodi's CPackerMAT: a single working
- * buffer is filled, and every time it completes it is pushed onto a FIFO of
- * finished MAT frames. The muxer drains one finished frame per call. This lets
- * a single input packet (e.g. one straddling a large timing gap) flush several
- * MAT frames at once without ever clobbering a not-yet-sent buffer, which the
- * older fixed N-buffer scheme could do.
- *
- * With gratitude to the Kodi / XBMC project and the authors of CPackerMAT
- * (xbmc/cores/AudioEngine/Utils/PackerMAT.cpp), whose robust MAT packing
- * design this FIFO output model is directly based on. Thank you for doing the
- * hard work of getting TrueHD MAT framing right and sharing it as open source.
  */
 #define MAT_PKT_OFFSET          61440
 #define MAT_FRAME_SIZE          61424
@@ -489,32 +478,165 @@ static const struct {
     MAT_CODE(MAT_FRAME_SIZE - sizeof(mat_end_code), mat_end_code),
 };
 
+/**
+ * Get the next index in the MAT buffer ring.
+ */
+static int truehd_next_mat_buffer(int idx)
+{
+    return (idx + 1) % HD_BUF_COUNT;
+}
+
+/**
+ * Mark the current MAT buffer ready and advance to the next free buffer.
+ */
+static int truehd_enqueue_mat(AVFormatContext *s)
+{
+    IEC61937Context *ctx = s->priv_data;
+
+    if (ctx->hd_buf_ready_count >= HD_BUF_COUNT - 1) {
+        av_log(s, AV_LOG_ERROR, "Too many completed TrueHD MAT frames pending\n");
+        return AVERROR(EINVAL);
+    }
+
+    ctx->hd_buf_ready_count++;
+    ctx->hd_buf_idx = truehd_next_mat_buffer(ctx->hd_buf_idx);
+    return 0;
+}
+
+typedef struct TrueHDAccessUnitInfo {
+    uint16_t input_timing;
+    uint16_t output_timing;
+    int has_output_timing;
+    int samples_per_frame;
+} TrueHDAccessUnitInfo;
+
+static int truehd_parse_access_unit(const uint8_t *au_data, int au_size,
+                                    TrueHDAccessUnitInfo *au)
+{
+    GetBitContext gb;
+    int major_sync_size = 28;
+    int ratebits;
+    int num_substreams;
+    int sync_word;
+    int ret;
+    int i;
+    const uint8_t *data;
+    int size;
+
+    memset(au, 0, sizeof(*au));
+
+    if (au_size < 4)
+        return AVERROR_INVALIDDATA;
+
+    data = au_data + 4;
+    size = au_size - 4;
+
+    au->input_timing = AV_RB16(au_data + 2);
+
+    if (size < 6 || AV_RB24(data) != 0xf8726f)
+        return 0;
+
+    /* major sync unit, fetch sample rate */
+    if (data[3] == 0xba)
+        ratebits = data[4] >> 4;
+    else if (data[3] == 0xbb)
+        ratebits = data[5] >> 4;
+    else
+        return AVERROR_INVALIDDATA;
+    au->samples_per_frame = 40 << (ratebits & 3);
+
+    if (size < 27)
+        return 0;
+
+    if (data[3] == 0xba && data[25] & 1) {
+        int ext_size = data[26] >> 4;
+        major_sync_size += 2 + ext_size * 2;
+    }
+
+    if (major_sync_size > size)
+        return 0;
+
+    ret = init_get_bits8(&gb, data + major_sync_size, size - major_sync_size);
+    if (ret < 0)
+        return ret;
+
+    num_substreams = data[16] >> 4;
+    if (num_substreams <= 0)
+        return 0;
+
+    for (i = 0; i < num_substreams; i++) {
+        int extra_word;
+        if (get_bits_left(&gb) < 16)
+            return 0;
+        extra_word = get_bits1(&gb);
+        skip_bits_long(&gb, 15);
+        if (!extra_word)
+            continue;
+        if (get_bits_left(&gb) < 16)
+            return 0;
+        skip_bits_long(&gb, 16);
+    }
+
+    /* output timing is always at least found in the first substream if it
+     * is present at all, so only walk the first substream.
+     */
+    if (get_bits_left(&gb) < 1)
+        return 0;
+    if (!get_bits1(&gb)) /* ! block_header_exists */
+        return 0;
+    if (get_bits_left(&gb) < 1)
+        return 0;
+    if (!get_bits1(&gb)) /* ! restart_header_exists */
+        return 0;
+    if (get_bits_left(&gb) < 13 + 1 + 16)
+        return 0;
+
+    sync_word = get_bits(&gb, 13);
+    if (sync_word != (0x31ea >> 1))
+        return 0;
+    skip_bits1(&gb); /* noise_type */
+
+    au->output_timing = get_bits(&gb, 16);
+    au->has_output_timing = 1;
+
+    return 0;
+}
+
+/**
+ * Interpret the modulo-2^16 difference of a and b as a signed delta.
+ * Only unambiguous when the true delta is < 2^15.
+ */
+static int u16_signed_delta(uint16_t a, uint16_t b)
+{
+    int delta = (uint16_t)(a - b);
+    return delta >= 0x8000 ? delta - 0x10000 : delta;
+}
+
 static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
 {
     IEC61937Context *ctx = s->priv_data;
-    uint8_t *mat_buf = ctx->mat_buf;
-    int ratebits;
+    uint8_t *hd_buf = ctx->hd_buf[ctx->hd_buf_idx];
+    TrueHDAccessUnitInfo au;
     int padding_remaining = 0;
+    int max_padding_per_packet = MAT_FRAME_SIZE * 2;
+    int output_discontinuity = 0;
     uint16_t input_timing;
     int total_frame_size = pkt->size;
     const uint8_t *dataptr = pkt->data;
     int data_remaining = pkt->size;
+    int have_pkt = 0;
     int next_code_idx;
     int ret;
 
     if (pkt->size < 10)
         return AVERROR_INVALIDDATA;
 
-    if (AV_RB24(pkt->data + 4) == 0xf8726f) {
-        /* major sync unit, fetch sample rate */
-        if (pkt->data[7] == 0xba)
-            ratebits = pkt->data[8] >> 4;
-        else if (pkt->data[7] == 0xbb)
-            ratebits = pkt->data[9] >> 4;
-        else
-            return AVERROR_INVALIDDATA;
+    ret = truehd_parse_access_unit(pkt->data, pkt->size, &au);
+    if (ret < 0)
+        return ret;
 
-        ctx->truehd_samples_per_frame = 40 << (ratebits & 3);
+    if (au.samples_per_frame) {
+        ctx->truehd_samples_per_frame = au.samples_per_frame;
         av_log(s, AV_LOG_TRACE, "TrueHD samples per frame: %d\n",
                ctx->truehd_samples_per_frame);
     }
@@ -522,8 +644,72 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
     if (!ctx->truehd_samples_per_frame)
         return AVERROR_INVALIDDATA;
 
-    input_timing = AV_RB16(pkt->data + 2);
-    if (ctx->truehd_prev_size) {
+    input_timing = au.input_timing;
+
+    ctx->truehd_output_timing += ctx->truehd_samples_per_frame;
+    if (au.has_output_timing) {
+        if (ctx->truehd_output_timing_valid &&
+            au.output_timing != ctx->truehd_output_timing) {
+            /*
+             * Each TrueHD access unit, output_timing increments by
+             * samples_per_frame, and input_timing nominally increments by the
+             * same amount.  However if input_timing has fallen behind relative
+             * to output_timing at a discontinuity then additional padding can be
+             * added to preserve the correct MAT timing and IEC61937 carrier.  So
+             * at the discontinuity compute padding based on the output-input
+             * timing delta relative to the new output-input delta.  Negative or
+             * excessive padding will be ignored and logged.
+             *
+             * output_timing is always ahead by one frame period, so one period is
+             * always subtracted before comparison.
+            */
+            int bytes_per_sample = 2560 / ctx->truehd_samples_per_frame;
+            uint16_t output_timing_minus_spf = au.output_timing -
+                                               ctx->truehd_samples_per_frame;
+            int previous_oi_delta = ctx->truehd_oi_delta;
+            int current_oi_delta = u16_signed_delta(output_timing_minus_spf,
+                                                    input_timing);
+            int prev_padding = 0;
+            int discontinuity_padding = 0;
+
+            output_discontinuity = 1;
+            discontinuity_padding = (previous_oi_delta - current_oi_delta) *
+                                    bytes_per_sample;
+
+            if (ctx->truehd_prev_size)
+                prev_padding = 2560 - ctx->truehd_prev_size;
+
+            padding_remaining = prev_padding + discontinuity_padding;
+
+            if (padding_remaining < 0 || padding_remaining > max_padding_per_packet) {
+                avpriv_request_sample(s,
+                                      "Unusual TrueHD output_timing discontinuity: "
+                                      "expected %"PRIu16" got %"PRIu16", "
+                                      "timing delta %d => %d, prev padding %d, "
+                                      "discontinuity padding %d, "
+                                      "total padding %d ignored",
+                                      ctx->truehd_output_timing, au.output_timing,
+                                      previous_oi_delta, current_oi_delta, prev_padding,
+                                      discontinuity_padding, padding_remaining);
+                padding_remaining = 0;
+            } else {
+                av_log(s, AV_LOG_VERBOSE,
+                       "TrueHD output_timing discontinuity: "
+                       "expected %"PRIu16" got %"PRIu16", "
+                       "timing delta %d => %d, prev padding %d, "
+                       "discontinuity padding %d, "
+                       "total padding %d\n",
+                       ctx->truehd_output_timing, au.output_timing,
+                       previous_oi_delta, current_oi_delta, prev_padding,
+                       discontinuity_padding, padding_remaining);
+            }
+        }
+
+        ctx->truehd_output_timing = au.output_timing;
+        ctx->truehd_output_timing_valid = 1;
+    }
+
+    if (ctx->truehd_prev_size && !output_discontinuity) {
         uint16_t delta_samples = input_timing - ctx->truehd_prev_time;
         /*
          * One multiple-of-48kHz frame is 1/1200 sec and the IEC 61937 rate
@@ -542,52 +728,51 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
         av_log(s, AV_LOG_TRACE, "delta_samples: %"PRIu16", delta_bytes: %d\n",
                delta_samples, delta_bytes);
 
-        /*
-         * Detect a discontinuity (seek). Tolerate large but plausible timing
-         * gaps: only a negative gap or one larger than several MAT frames is
-         * treated as a seek. The FIFO output queue safely absorbs the multiple
-         * MAT frames that a large gap flushes in a single call, so a generous
-         * threshold avoids needless resets (mirrors Kodi's MAT_BUFFER_SIZE*5).
-         */
-        if (padding_remaining < 0 || padding_remaining >= MAT_PKT_OFFSET * 5) {
-            avpriv_request_sample(s, "Unusual frame timing: %"PRIu16" => %"PRIu16", %d samples/frame; assuming seek",
+        /* sanity check */
+        if (padding_remaining < 0 || padding_remaining > max_padding_per_packet) {
+            avpriv_request_sample(s, "Unusual frame timing: %"PRIu16" => %"PRIu16", %d samples/frame",
                                   ctx->truehd_prev_time, input_timing, ctx->truehd_samples_per_frame);
-            /* drop the partially assembled frame; already-queued complete
-             * frames are left to drain normally */
-            ctx->mat_buf_filled = 0;
-            ctx->truehd_prev_size = 0;
             padding_remaining = 0;
         }
     }
 
+    if (ctx->truehd_output_timing_valid) {
+        uint16_t output_timing_minus_spf = ctx->truehd_output_timing -
+                                           ctx->truehd_samples_per_frame;
+        ctx->truehd_oi_delta = u16_signed_delta(output_timing_minus_spf,
+                                                input_timing);
+    }
+
     for (next_code_idx = 0; next_code_idx < FF_ARRAY_ELEMS(mat_codes); next_code_idx++)
-        if (ctx->mat_buf_filled <= mat_codes[next_code_idx].pos)
+        if (ctx->hd_buf_filled <= mat_codes[next_code_idx].pos)
             break;
 
     if (next_code_idx >= FF_ARRAY_ELEMS(mat_codes))
         return AVERROR_BUG;
 
     while (padding_remaining || data_remaining ||
-           mat_codes[next_code_idx].pos == ctx->mat_buf_filled) {
+           mat_codes[next_code_idx].pos == ctx->hd_buf_filled) {
 
-        if (mat_codes[next_code_idx].pos == ctx->mat_buf_filled) {
+        if (mat_codes[next_code_idx].pos == ctx->hd_buf_filled) {
             /* time to insert MAT code */
             int code_len = mat_codes[next_code_idx].len;
             int code_len_remaining = code_len;
-            memcpy(mat_buf + mat_codes[next_code_idx].pos,
+            memcpy(hd_buf + mat_codes[next_code_idx].pos,
                    mat_codes[next_code_idx].code, code_len);
-            ctx->mat_buf_filled += code_len;
+            ctx->hd_buf_filled += code_len;
 
             next_code_idx++;
             if (next_code_idx == FF_ARRAY_ELEMS(mat_codes)) {
                 next_code_idx = 0;
 
-                /* this was the last code: the MAT frame is complete, queue it
-                 * (av_fifo_write copies the bytes, so mat_buf can be reused) */
-                ret = av_fifo_write(ctx->mat_fifo, mat_buf, 1);
+                /* this was the last code, move to the next MAT frame */
+                have_pkt = 1;
+                ret = truehd_enqueue_mat(s);
                 if (ret < 0)
                     return ret;
-                ctx->mat_buf_filled = 0;
+
+                hd_buf = ctx->hd_buf[ctx->hd_buf_idx];
+                ctx->hd_buf_filled = 0;
 
                 /* inter-frame gap has to be counted as well, add it */
                 code_len_remaining += MAT_PKT_OFFSET - MAT_FRAME_SIZE;
@@ -606,11 +791,11 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (padding_remaining) {
-            int padding_to_insert = FFMIN(mat_codes[next_code_idx].pos - ctx->mat_buf_filled,
+            int padding_to_insert = FFMIN(mat_codes[next_code_idx].pos - ctx->hd_buf_filled,
                                           padding_remaining);
 
-            memset(mat_buf + ctx->mat_buf_filled, 0, padding_to_insert);
-            ctx->mat_buf_filled += padding_to_insert;
+            memset(hd_buf + ctx->hd_buf_filled, 0, padding_to_insert);
+            ctx->hd_buf_filled += padding_to_insert;
             padding_remaining -= padding_to_insert;
 
             if (padding_remaining)
@@ -618,11 +803,11 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (data_remaining) {
-            int data_to_insert = FFMIN(mat_codes[next_code_idx].pos - ctx->mat_buf_filled,
+            int data_to_insert = FFMIN(mat_codes[next_code_idx].pos - ctx->hd_buf_filled,
                                        data_remaining);
 
-            memcpy(mat_buf + ctx->mat_buf_filled, dataptr, data_to_insert);
-            ctx->mat_buf_filled += data_to_insert;
+            memcpy(hd_buf + ctx->hd_buf_filled, dataptr, data_to_insert);
+            ctx->hd_buf_filled += data_to_insert;
             dataptr += data_to_insert;
             data_remaining -= data_to_insert;
         }
@@ -632,23 +817,13 @@ static int spdif_header_truehd(AVFormatContext *s, AVPacket *pkt)
     ctx->truehd_prev_time = input_timing;
 
     av_log(s, AV_LOG_TRACE, "TrueHD frame inserted, total size %d, buffer position %d\n",
-           total_frame_size, ctx->mat_buf_filled);
+           total_frame_size, ctx->hd_buf_filled);
 
-    /* emit one completed MAT frame from the queue, if any is ready */
-    if (av_fifo_can_read(ctx->mat_fifo) < 1) {
+    if (!have_pkt) {
         ctx->pkt_offset = 0;
         return 0;
     }
 
-    ret = av_fifo_read(ctx->mat_fifo, ctx->mat_out, 1);
-    if (ret < 0)
-        return ret;
-
-    ctx->out_buf     = ctx->mat_out;
-    ctx->data_type   = IEC61937_TRUEHD;
-    ctx->pkt_offset  = MAT_PKT_OFFSET;
-    ctx->out_bytes   = MAT_FRAME_SIZE;
-    ctx->length_code = MAT_FRAME_SIZE;
     return 0;
 }
 
@@ -677,13 +852,11 @@ static int spdif_write_header(AVFormatContext *s)
     case AV_CODEC_ID_TRUEHD:
     case AV_CODEC_ID_MLP:
         ctx->header_info = spdif_header_truehd;
-        ctx->mat_buf = av_mallocz(MAT_FRAME_SIZE);
-        ctx->mat_out = av_malloc(MAT_FRAME_SIZE);
-        if (!ctx->mat_buf || !ctx->mat_out)
-            return AVERROR(ENOMEM);
-        ctx->mat_fifo = av_fifo_alloc2(8, MAT_FRAME_SIZE, AV_FIFO_FLAG_AUTO_GROW);
-        if (!ctx->mat_fifo)
-            return AVERROR(ENOMEM);
+        for (int i = 0; i < FF_ARRAY_ELEMS(ctx->hd_buf); i++) {
+            ctx->hd_buf[i] = av_malloc(MAT_FRAME_SIZE);
+            if (!ctx->hd_buf[i])
+                return AVERROR(ENOMEM);
+        }
         break;
     default:
         avpriv_report_missing_feature(s, "Codec %d",
@@ -699,9 +872,6 @@ static void spdif_deinit(AVFormatContext *s)
     av_freep(&ctx->buffer);
     for (int i = 0; i < FF_ARRAY_ELEMS(ctx->hd_buf); i++)
         av_freep(&ctx->hd_buf[i]);
-    av_freep(&ctx->mat_buf);
-    av_freep(&ctx->mat_out);
-    av_fifo_freep2(&ctx->mat_fifo);
 }
 
 static av_always_inline void spdif_put_16(IEC61937Context *ctx,
@@ -727,6 +897,27 @@ static int spdif_write_packet(struct AVFormatContext *s, AVPacket *pkt)
     ret = ctx->header_info(s, pkt);
     if (ret < 0)
         return ret;
+
+    if (ctx->header_info == spdif_header_truehd) {
+        /* TrueHD may complete more than one MAT buffer in one AVPacket.  At
+         * most, write one completed buffer per AVPacket.
+         */
+        int ready_idx;
+
+        if (!ctx->hd_buf_ready_count)
+            return 0;
+
+        ready_idx = ctx->hd_buf_next_ready_idx;
+        ctx->hd_buf_next_ready_idx = truehd_next_mat_buffer(ctx->hd_buf_next_ready_idx);
+        ctx->hd_buf_ready_count--;
+
+        ctx->out_buf     = ctx->hd_buf[ready_idx];
+        ctx->out_bytes   = MAT_FRAME_SIZE;
+        ctx->data_type   = IEC61937_TRUEHD;
+        ctx->length_code = MAT_FRAME_SIZE;
+        ctx->pkt_offset  = MAT_PKT_OFFSET;
+    }
+
     if (!ctx->pkt_offset)
         return 0;
 

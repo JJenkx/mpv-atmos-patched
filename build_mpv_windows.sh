@@ -998,7 +998,7 @@ popd >/dev/null
 
 SPDIF_PATCH="$SCRIPT_DIR/patches/spdifenc.c"
 if [ -f "$SPDIF_PATCH" ]; then
-  echo "==> Applying patched spdifenc.c (TrueHD/Atmos MAT FIFO packer) ..."
+  echo "==> Applying patched spdifenc.c (TrueHD/Atmos MAT padding fix, FFmpeg PR #23542) ..."
   cp -f "$SPDIF_PATCH" "$FFMPEG_SRC/libavformat/spdifenc.c"
 else
   echo "!! Patch $SPDIF_PATCH not found; building with upstream spdifenc.c"

@@ -1,8 +1,8 @@
 # mpv-patched for Windows x86_64
 
 Cross-compiled on Arch Linux with mingw-w64 from the same patched sources as the
-Linux build: FFmpeg master with the **TrueHD/Atmos MAT FIFO packer**
-(`patches/spdifenc.c`) and mpv master with all five custom patches
+Linux build: FFmpeg master with the **TrueHD/Atmos MAT padding fix**
+(`patches/spdifenc.c`, upstream FFmpeg PR #23542) and mpv master with all five custom patches
 (segmented parallel HTTP, segmented speed telemetry, unselected-track demux
 caching, in-process thumbnail cache, next-file prefetch).
 
