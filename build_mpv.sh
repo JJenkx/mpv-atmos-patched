@@ -97,8 +97,16 @@ echo "==> Build config: VARIANT=$VARIANT DISTRIBUTABLE=$DISTRIBUTABLE"
 FFMPEG_REPO="${FFMPEG_REPO:-https://github.com/FFmpeg/FFmpeg.git}"
 FFMPEG_REF="${FFMPEG_REF:-}"
 
+# Stock variant builds upstream mpv. The enhanced variant builds the JJenkx
+# fork, whose "custom" branch carries all streaming/RAM features as proper
+# commits (segmented HTTP + speed telemetry, demux cache-unselected,
+# prefetch-playlist=immediate, thumbnail-cache, malloc/heap tuning for Linux
+# and Windows) — the old patches/apply_*.sh flow is gone. Sync the fork with
+# upstream via TOOLS/fork-sync-upstream.sh in the fork checkout.
 MPV_REPO="${MPV_REPO:-https://github.com/mpv-player/mpv.git}"
 MPV_REF="${MPV_REF:-}"
+MPV_ENHANCED_REPO="${MPV_ENHANCED_REPO:-https://github.com/JJenkx/mpv.git}"
+MPV_ENHANCED_REF="${MPV_ENHANCED_REF:-custom}"
 
 LUAJIT_REPO="${LUAJIT_REPO:-https://github.com/LuaJIT/LuaJIT.git}"
 LUAJIT_REF="${LUAJIT_REF:-}"
@@ -118,7 +126,10 @@ LIBBLURAY_REPO="${LIBBLURAY_REPO:-https://code.videolan.org/videolan/libbluray.g
 LIBBLURAY_REF="${LIBBLURAY_REF:-}"
 
 LIBPLACEBO_REPO="${LIBPLACEBO_REPO:-https://github.com/haasn/libplacebo.git}"
-LIBPLACEBO_REF="${LIBPLACEBO_REF:-}"
+# Pinned: v7.360.1 is the minimum current mpv requires. Master tip was in the
+# build during a kcompactd/amdgpu_hmm_invalidate_gfx kernel oops (2026-07-14);
+# bump deliberately, never implicitly.
+LIBPLACEBO_REF="${LIBPLACEBO_REF:-v7.360.1}"
 
 # Codec / media libs built from source to avoid SONAME breakage on system updates
 OPENSSL_REPO="${OPENSSL_REPO:-https://github.com/openssl/openssl.git}"
@@ -258,8 +269,8 @@ ensure_checkout(){
       || git -C "$dir" fetch origin "refs/tags/$ref:refs/tags/$ref"
     git -C "$dir" checkout --detach "refs/tags/$ref"
   elif git -C "$dir" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
-    git -C "$dir" fetch --depth=1 origin "refs/heads/$ref:refs/remotes/origin/$ref" \
-      || git -C "$dir" fetch origin "refs/heads/$ref:refs/remotes/origin/$ref"
+    git -C "$dir" fetch --depth=1 origin "+refs/heads/$ref:refs/remotes/origin/$ref" \
+      || git -C "$dir" fetch origin "+refs/heads/$ref:refs/remotes/origin/$ref"
     git -C "$dir" checkout -B "$ref" "refs/remotes/origin/$ref"
   elif git -C "$dir" rev-parse -q --verify "$ref^{commit}" >/dev/null; then
     git -C "$dir" checkout --detach "$ref"
@@ -908,80 +919,20 @@ else
 fi
 
 # ── STEP 25: mpv ─────────────────────────────────────────────────────────────
-clone_or_update "$MPV_REPO" "$MPV_SRC" 1
-# Start from a pristine tree so re-applying the segmented-http patch is clean.
-git -C "$MPV_SRC" reset --hard
-git -C "$MPV_SRC" clean -fdx -e build
-ensure_checkout "$MPV_SRC" "$MPV_REF"
-
-# The streaming enhancements + RAM fix below are the "enhanced" variant only.
-# The "stock" variant ships stock mpv (the Atmos/TrueHD spdifenc patch lives in
-# the FFmpeg step above and is applied in both variants).
+# enhanced: the JJenkx fork's "custom" branch, which carries every streaming
+# enhancement + the RAM/heap tuning as proper commits (no apply-scripts).
+# stock: upstream mpv. The Atmos/TrueHD spdifenc patch lives in the FFmpeg
+# step above and is applied in both variants.
 if [ "$VARIANT" = enhanced ]; then
-
-# Segmented parallel HTTP downloading (--segmented-chunks / --segment-size).
-# Adds stream/stream_segmented_http.c + registry/options/meson hooks.
-SEGMENTED_PATCH="$SCRIPT_DIR/patches/apply_segmented_http.sh"
-if [ -x "$SEGMENTED_PATCH" ]; then
-  "$SEGMENTED_PATCH" "$MPV_SRC"
+  clone_or_update "$MPV_ENHANCED_REPO" "$MPV_SRC" 1
+  git -C "$MPV_SRC" reset --hard
+  git -C "$MPV_SRC" clean -fdx -e build
+  ensure_checkout "$MPV_SRC" "$MPV_ENHANCED_REF"
 else
-  echo "!! $SEGMENTED_PATCH not found; building without segmented downloading"
-fi
-
-# Expose the segmented downloader's true per-thread + combined download rate via
-# demuxer-cache-state (segmented-input-rate / segmented-worker-rates), for the
-# uosc seek-bar download-speed readout. Depends on the segmented-http patch above.
-SEGSPEED_PATCH="$SCRIPT_DIR/patches/apply_segmented_speed.sh"
-if [ -x "$SEGSPEED_PATCH" ]; then
-  "$SEGSPEED_PATCH" "$MPV_SRC"
-else
-  echo "!! $SEGSPEED_PATCH not found; building without segmented download-speed reporting"
-fi
-
-# Cache subtitle/audio-track packets while deselected
-# (--demuxer-cache-unselected-subs/-audio) so enabling/switching tracks on
-# network streams doesn't drop the forward cache.
-SUBCACHE_PATCH="$SCRIPT_DIR/patches/apply_demux_cache_unselected_subs.sh"
-if [ -x "$SUBCACHE_PATCH" ]; then
-  "$SUBCACHE_PATCH" "$MPV_SRC"
-else
-  echo "!! $SUBCACHE_PATCH not found; building without sub-track cache retention"
-fi
-
-# In-process, from-buffer thumbnailer (thumbnail-cache command): decode seekbar
-# thumbnails out of the already-buffered demuxer cache with no subprocess fork
-# (avoids the spdif-underrun wedge) and no extra network I/O.
-THUMBCACHE_PATCH="$SCRIPT_DIR/patches/apply_thumbnail_cache.sh"
-if [ -x "$THUMBCACHE_PATCH" ]; then
-  "$THUMBCACHE_PATCH" "$MPV_SRC"
-else
-  echo "!! $THUMBCACHE_PATCH not found; building without in-process thumbnailer"
-fi
-
-# Next-file prefetch (immediate + reduced-cost prefetch of the next playlist
-# entry, ramped to full buffering on promotion). Depends on the segmented-http
-# patch above for STREAM_PREFETCH / STREAM_CTRL_SEGMENTED_ACTIVATE consumers.
-NEXTFILE_PATCH="$SCRIPT_DIR/patches/apply_next_file_prefetch.sh"
-if [ -x "$NEXTFILE_PATCH" ]; then
-  "$NEXTFILE_PATCH" "$MPV_SRC"
-else
-  echo "!! $NEXTFILE_PATCH not found; building without next-file prefetch"
-fi
-
-# Compile glibc malloc tuning (M_ARENA_MAX=2 / M_TRIM_THRESHOLD=128MiB) into
-# main() so the portable build holds RSS flat across a long playlist instead of
-# ratcheting up ~1 arena per file (overnight OOM-freeze fix), without needing
-# the launcher to export MALLOC_ARENA_MAX / MALLOC_TRIM_THRESHOLD_. Linux-only
-# (patches osdep/main-fn-unix.c).
-MALLOC_PATCH="$SCRIPT_DIR/patches/apply_malloc_tuning.sh"
-if [ -x "$MALLOC_PATCH" ]; then
-  "$MALLOC_PATCH" "$MPV_SRC"
-else
-  echo "!! $MALLOC_PATCH not found; building without compiled-in malloc tuning"
-fi
-
-else
-  echo "==> VARIANT=stock: skipping streaming patches (segmented HTTP, speed telemetry, demux-cache, in-process thumbnails, next-file prefetch) and the RAM/malloc patch"
+  clone_or_update "$MPV_REPO" "$MPV_SRC" 1
+  git -C "$MPV_SRC" reset --hard
+  git -C "$MPV_SRC" clean -fdx -e build
+  ensure_checkout "$MPV_SRC" "$MPV_REF"
 fi
 
 rm -rf "$MPV_BUILD_DIR"

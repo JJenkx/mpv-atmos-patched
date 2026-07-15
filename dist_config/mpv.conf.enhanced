@@ -1,31 +1,297 @@
-# mpv-atmos-patched — "Enhanced + Atmos" default configuration.
-# These are the streaming-tuned defaults for the enhanced build. Options marked
-# below require the custom patches compiled into this build (segmented HTTP,
-# next-file prefetch, unselected-track demux caching) and do not exist in stock
-# mpv. Your personal config from the source repo ships alongside this file as
-# mpv.conf.example / input.conf.example — copy from it to customize.
+# mpv-atmos-patched — "Enhanced + Atmos" example configuration.
+# This is the author's complete working config (4K HDR remuxes over HTTPS to an
+# AVR via TrueHD/Atmos passthrough). Treat it as a worked example: audio-device,
+# cache sizes and shader settings are machine-specific — see TUNING.md before
+# copying values blindly.
 
-# ── Demuxer cache (keeps deselected sub/audio packets; patched options) ───────
 demuxer-cache-unselected-audio=yes
 demuxer-cache-unselected-subs=yes
-demuxer-max-bytes=512MiB
-demuxer-max-back-bytes=512MiB
 
-# ── Playback / sync ───────────────────────────────────────────────────────────
+ao=alsa                                      # ALSA audio output
+audio-channels=7.1,5.1,stereo
+audio-device='alsa/hdmi:CARD=HDMI,DEV=0'     # mpv --audio-device=help
+audio-exclusive=yes
+audio-spdif=ac3,dts,eac3,dts-hd,truehd
+audio-buffer=0.5
+
+demuxer-max-bytes=4GiB
+demuxer-max-back-bytes=4GiB
+
+gamut-mapping-mode=perceptual  # IPT-space 3D-LUT soft-clip (accurate; replaces saturation stretch)
+gpu-api=vulkan
+hdr-compute-peak=yes           # real-time per-scene peak detection on the GPU
+hdr-contrast-recovery=0.30     # HQ preset: restore high-frequency detail crushed by tone mapping
+hdr-peak-percentile=99.995     # HQ preset: ignore stray super-bright pixels when measuring peak
+profile=gpu-hq
+target-colorspace-hint-mode=source-dynamic
+target-colorspace-hint=yes
+target-peak=auto               # 1000 nits, taken from compositor feedback
+tone-mapping=spline            # libplacebo default+SOTA: ST2094 knee, uses HDR10+/DoVi dynamic metadata automatically
+vd-lavc-threads=16
 video-sync=display-vdrop
-force-window=immediate
+vo=gpu-next
 
-# ── Network / streaming ───────────────────────────────────────────────────────
-network-timeout=5
-hls-bitrate=max
+ignore-path-in-watch-later-config=yes
+sub-visibility=yes
+screen=1
+cursor-autohide=200
+ontop
+osc=no
+reset-on-next-file=audio-delay,mute,pause,speed,sub-delay,video-aspect-override,video-pan-x,video-pan-y,video-rotate,video-zoom
+save-position-on-quit=yes
+script-opts-append=linux.or.windows-memory_usage_percentage=10
+script-opts-append=autocrop-auto_delay=0
+script-opts-append=autocrop-auto=no
+script-opts-append=autocrop-detect_seconds=3
+script-opts-append=osc-scalefullscreen=1.5
+script-opts-append=osc-scalewindowed=1.0
+script-opts-append=osc-vidscale=no   # Do not scale by window size
+term-osd-bar=yes
+term-playing-msg=yes
+volume-max=100
+volume=100
+watch-later-options-remove=ab-loop-b
+watch-later-options-remove=ab-loop-a
+watch-later-options-remove=af
+watch-later-options-remove=aid
+watch-later-options-remove=audio-delay
+watch-later-options-remove=border
+watch-later-options-remove=brightness
+watch-later-options-remove=contrast
+watch-later-options-remove=deinterlace
+watch-later-options-remove=fullscreen
+watch-later-options-remove=gamma
+watch-later-options-remove=mute
+watch-later-options-remove=ontop
+watch-later-options-remove=osd-level
+watch-later-options-remove=panscan
+watch-later-options-remove=pause
+watch-later-options-remove=saturation
+watch-later-options-remove=sid
+watch-later-options-remove=speed
+watch-later-options-remove=sub-ass-override
+watch-later-options-remove=sub-delay
+watch-later-options-remove=sub-pos
+watch-later-options-remove=sub-scale
+watch-later-options-remove=sub-visibility
+#watch-later-options-remove=start
+watch-later-options-remove=vf
+watch-later-options-remove=volume
+watch-later-options-remove=vid
+watch-later-options-remove=video-aspect-override
+watch-later-options-remove=video-zoom
+watch-later-options-remove=video-align-x
+watch-later-options-remove=video-align-y
+write-filename-in-watch-later-config=yes
+osd-playing-msg-duration=3000
+
+# GENERAL #
+ytdl=yes
+keep-open=no
+autofit=65%
+geometry=50%:50%                    #start with window in the middle
+autofit-larger=40%x50%
+watch-later-directory="~~/watch_later/"  #default directory for save-position-on-quit
+hr-seek-framedrop=no
+border=no
+msg-color=yes
+msg-module=yes
+
+# Screenshots #
+screenshot-template="%x\Screens\Screenshot-%F-T%wH.%wM.%wS.%wT-F%{estimated-frame-number}"
+screenshot-format=png               # Set screenshot format
+screenshot-png-compression=4        # Range is 0 to 10. 0 being no compression. compute-time to size is log so 4 is best
+screenshot-tag-colorspace=yes
+screenshot-high-bit-depth=yes       # Same output bitdepth as the video
+
+# OSC/OSD #
+osc=yes
+osd-bar=yes                          # Do not remove/comment if mpv_thumbnail_script_client_osc.lua is being used.
+osd-font='Inter Tight Medium'        # Set a font for OSC
+osd-font-size=30                     # Set a font size
+osd-color='#CCFFFFFF'              # ARGB format
+osd-border-color='#DD322640'       # ARGB format
+osd-bar-align-y=-1                   # progress bar y alignment (-1 top, 0 centered, 1 bottom)
+osd-border-size=2                    # size for osd text and progress bar
+osd-bar-h=1                          # height of osd bar as a fractional percentage of your screen height
+osd-bar-w=60                         # width of " " "
+
+# Subs #
+sub-ass-use-video-data=all           # Backward compatibility for vsfilter fansubs
+sub-ass-scale-with-window=no         # May have undesired effects with signs being misplaced.
+sub-fix-timing=yes
+sub-auto=fuzzy                       # external subs don't have to match the file name exactly to autoload
+sub-file-paths-append=ass            # search for external subs in these relative subdirectories
+sub-file-paths-append=srt
+sub-file-paths-append=sub
+sub-file-paths-append=subs
+sub-file-paths-append=subtitles
+demuxer-mkv-subtitle-preroll=yes     # try to correctly show embedded subs when seeking
+embeddedfonts=yes                    # use embedded fonts for SSA/ASS subs
+sub-fix-timing=no                    # do not try to fix gaps (which might make it worse in some cases). Enable if there are scenebleeds.
+sub-pos=102
+
+# Subs - Forced #
+sub-font=Open Sans SemiBold
+sub-font-size=46
+sub-blur=0.3
+sub-border-color=0.0/0.0/0.0/0.8
+sub-border-size=3.2
+sub-color=0.9/0.9/0.9/1.0
+sub-shadow-color=0.0/0.0/0.0/0.25
+sub-shadow-offset=0
+sub-pos=102
+
+# Languages #
+alang=jpn,jp,eng,en,enUS,en-US,de,ger
+slang=eng,en,und,de,ger,jp,jap
+
+# Video Profiles #
+dither=ordered
+dither-depth=12
+scale=ewa_lanczos
+cscale=lanczos
+dscale=mitchell
+scale-antiring=0
+cscale-antiring=0
+correct-downscaling=yes
+linear-downscaling=no
+sigmoid-upscaling=yes
+
+# Debanding #
+deband=yes
+deband-iterations=2
+deband-threshold=40                  #increase this number to increase deband strenght but lose some detail
+deband-range=16
+deband-grain=48
+dither-depth=auto
+
+profile=sub-profile-unobtrusive
+
+[sub-profile-unobtrusive]
+ blend-subtitles=no
+ sub-ass-override=yes
+ sub-font="Helvetica"
+ sub-font-size=30
+ sub-color=.75/.85
+ sub-border-color=0/.33
+ sub-shadow-color=0/.33
+ sub-shadow-offset=.75
+ sub-pos=102
+ sub-border-size=1
+
+[sub-profile-prominent]
+ sub-ass-override=yes
+ sub-font="Helvetica"
+ sub-font-size=30
+ sub-color=.95/.95
+ sub-border-color=.15/.93
+ sub-shadow-color=0/.33
+ sub-shadow-offset=.75
+ sub-pos=102
+ sub-border-size=2
+
+#AUDIO PLAYER OSC#
+[audio]
+#ao=pipewire
+#audio-samplerate=192000
+msg-level=ao=info
+#ao=alsa                                      # ALSA audio output
+#ao=pulse
+cache=yes
+#demuxer-max-bytes=100MiB
+audio-channels=7.1,5.1,stereo
+#audio-device='alsa/hdmi:CARD=HDMI,DEV=0'     # mpv --audio-device=help
+no-resume-playback
+start=0
+volume=100
+watch-later-options-remove=start
+script-opts=osc-visibility=always
+save-position-on-quit=no
+
+[dts]
+ao=alsa                                      # ALSA audio output
+audio-channels=7.1,5.1,stereo
+audio-device='alsa/hdmi:CARD=HDMI,DEV=0'     # mpv --audio-device=help
+audio-exclusive=yes
+audio-spdif=ac3,dts,eac3,dts-hd,truehd
+no-resume-playback
+start=0
+volume=100
+watch-later-options-remove=start
+script-opts=osc-visibility=always
+save-position-on-quit=no
+
+[extension.dts]
+profile=dts
+[extension.mp3]
+profile=audio
+[extension.m4a]
+profile=audio
+[extension.wav]
+profile=audio
+[extension.flac]
+profile=audio
+[extension.ogg]
+profile=audio
+[extension.opus]
+profile=audio
+[extension.cue]
+profile=audio
+[extension.m3a]
+profile=audio
+[extension.mkv]
+profile=mkv
+
+[mkv]
+cache=yes
+
+[protocol.file]
+network-timeout=0
+force-window=yes
 cache=yes
 cache-pause=yes
+force-seekable=yes
 
-# ── Segmented parallel HTTP downloader (patched) ──────────────────────────────
-segmented-chunks=2
-segment-size=5MiB
+[protocol-network]
+network-timeout=5
+hls-bitrate=max
+http-segmented-connections=8
+http-segmented-chunk-size=5MiB
+cache=yes
+cache-pause=yes
+prefetch-playlist=immediate
+prefetch-demuxer-max-bytes=2048MiB   # 0 = 256MiB default
+http-segmented-prefetch-connections=2                   # workers during prefetch; ramps to http-segmented-connections
+force-window=immediate
 
-# ── Next-file prefetch (patched) ──────────────────────────────────────────────
-next-file-prefetch=yes
-next-file-demuxer-max-bytes-prefetch=256MiB
-next-file-segmented-chunks=2
+[protocol.http]
+profile=protocol-network
+
+[protocol.https]
+profile=protocol-network
+
+[image]
+# Applied by scripts/detect-image.lua (see script-opts/detect_image.conf:
+# "apply-profile image" on image detection). Do not add profile-cond here —
+# there is no "image" property in this mpv build; a profile-cond=image line
+# only produces an auto_profiles warning and never fires.
+icc-profile-auto=no
+mute=yes
+osc=no                               # the osc is mostly useful for videos
+sub-auto=no                          # don't try to autoload subtitles or audio files
+audio-file-auto=no                   # get rid of the useless V: 00:00:00 / 00:00:00 line
+image-display-duration=inf           # don't slideshow by default
+loop-file=inf                        # loop files in case of webms or gifs
+loop-playlist=inf                    # and loop the whole playlist
+window-dragging=no                   # you need this if you plan to use drag-to-pan or pan-follows-cursor with MOUSE_LEFT
+deband=no
+
+[extension.png]
+video-aspect-override=no
+[extension.jpg]
+video-aspect-override=no
+[extension.jpeg]
+profile=extension.jpg
+[silent]
+msg-level=all=no

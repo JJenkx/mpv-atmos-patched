@@ -2,9 +2,11 @@
 
 Cross-compiled on Arch Linux with mingw-w64 from the same patched sources as the
 Linux build: FFmpeg master with the **TrueHD/Atmos MAT padding fix**
-(`patches/spdifenc.c`, upstream FFmpeg PR #23542) and mpv master with all five custom patches
-(segmented parallel HTTP, segmented speed telemetry, unselected-track demux
-caching, in-process thumbnail cache, next-file prefetch).
+(`patches/spdifenc.c`, upstream FFmpeg PR #23542) and the
+[JJenkx/mpv fork](https://github.com/JJenkx/mpv/commits/custom) (branch
+`custom`) with all streaming features as commits (segmented parallel HTTP,
+segmented speed telemetry, unselected-track demux caching, in-process
+thumbnail cache, immediate playlist prefetch, Windows heap-trim).
 
 Fully self-contained: every codec/support DLL sits beside `mpv.exe`, and the
 config lives in `portable_config/` (mpv's native portable mode — detected
@@ -89,10 +91,10 @@ Silent flags: `/VERYSILENT /PORTABLE=1 /DIR="D:\apps\mpv"`.
 ./build_installer.sh     # recompile setup.exe under Wine
 ```
 
-Upstream anchors: the five mpv patches are applied by anchored text edits that
-**abort the build** if mpv master drifts (as happened 2026-07-11 with the
-`lavf_opts` → `stream_lavf_opts` rename — fixed in `apply_segmented_http.sh`).
-Pin known-good revisions with `MPV_REF=<commit> FFMPEG_REF=<commit>` if needed.
+Upstream drift: the enhanced mpv comes from the fork's `custom` branch, which
+only moves when upstream is deliberately merged in (TOOLS/fork-sync-upstream.sh
+in the fork). Pin known-good revisions with `MPV_ENHANCED_REF=<commit>
+FFMPEG_REF=<commit>` if needed.
 
 Known quirks handled in the scripts (don't "clean up" without reading them):
 libiconv ≥1.18 for GCC 15+/C23; explicit `--build` triplet because wine's

@@ -357,22 +357,22 @@ demuxer-max-bytes=1024MiB
 [protocol-network]
 network-timeout=5
 hls-bitrate=max
-segmented-chunks=8
-segment-size=5MiB
+http-segmented-connections=8
+http-segmented-chunk-size=5MiB
 cache=yes
 cache-pause=yes
 # Next-file prefetch (custom patch): start demuxer-prefetching the next playlist
 # entry as soon as the current file plays smoothly (not just near EOF), held
 # cheap while it prefetches — the next file's demuxer cache is capped at
-# next-file-demuxer-max-bytes-prefetch and its segmented-http download runs with
-# only next-file-segmented-chunks workers, so it never steals bandwidth from
+# prefetch-demuxer-max-bytes and its segmented-http download runs with
+# only http-segmented-prefetch-connections workers, so it never steals bandwidth from
 # what's playing. On promotion to the current file the cap lifts to
-# demuxer-max-bytes and parallelism ramps to the full segmented-chunks, keeping
+# demuxer-max-bytes and parallelism ramps to the full http-segmented-connections, keeping
 # the already-buffered data (no reopen). Prefetch honours
 # demuxer-cache-unselected-audio/subs automatically.
-next-file-prefetch=yes
-next-file-demuxer-max-bytes-prefetch=1024MiB   # 0 = 256MiB default
-next-file-segmented-chunks=2                   # workers during prefetch; ramps to segmented-chunks
+prefetch-playlist=immediate
+prefetch-demuxer-max-bytes=1024MiB   # 0 = 256MiB default
+http-segmented-prefetch-connections=2                   # workers during prefetch; ramps to http-segmented-connections
 force-window=immediate
 
 [protocol.http]

@@ -14,12 +14,12 @@ importantly — **how to tune them without blowing up your RAM**.
 
 | Option | Default (shipped) | What it does |
 |---|---|---|
-| `segmented-chunks=<0-16>` | `2` | Number of **parallel download workers**. `0` = off (normal single-connection HTTP). |
-| `segment-size=<size>` | `5MiB` | Size of each chunk a worker fetches. Range 64KiB–1GiB. |
-| `segment-auto-size=<yes\|no>` | `yes` | Lets chunks grow toward your demuxer budget (up to 4× `segment-size`, capped at a 1 GiB in-flight window). |
-| `next-file-prefetch=<yes\|no>` | `yes` | Start downloading the **next playlist item** while the current one plays. |
-| `next-file-demuxer-max-bytes-prefetch=<size>` | `256MiB` | How much of the next file to buffer ahead. |
-| `next-file-segmented-chunks=<1-16>` | `2` | Workers used for that next-file prefetch. |
+| `http-segmented-connections=<0-16>` | `2` | Number of **parallel download workers**. `0` = off (normal single-connection HTTP). |
+| `http-segmented-chunk-size=<size>` | `5MiB` | Size of each chunk a worker fetches. Range 64KiB–1GiB. |
+| `http-segmented-auto-size=<yes\|no>` | `yes` | Lets chunks grow toward your demuxer budget (up to 4× `http-segmented-chunk-size`, capped at a 1 GiB in-flight window). |
+| `prefetch-playlist=<no\|eof\|immediate>` | `immediate` | Start downloading the **next playlist item** while the current one plays. |
+| `prefetch-demuxer-max-bytes=<size>` | `256MiB` | How much of the next file to buffer ahead. |
+| `http-segmented-prefetch-connections=<1-16>` | `2` | Workers used for that next-file prefetch. |
 | `demuxer-cache-unselected-subs=<yes\|no>` | `yes` | Keep **subtitle** packets cached even for tracks you haven't selected. |
 | `demuxer-cache-unselected-audio=<yes\|no>` | `yes` | Same, for **audio** tracks. |
 
@@ -62,8 +62,8 @@ machine. Which brings us to:
 ```
 peak RSS  ≈  demuxer-max-bytes                     (forward buffer, current file)
           +  demuxer-max-back-bytes                (back buffer, current file)
-          +  next-file-demuxer-max-bytes-prefetch  (the NEXT file, buffered at the same time)
-          +  segment buffers in flight             (segmented-chunks × chunk size, ≤ ~1 GiB)
+          +  prefetch-demuxer-max-bytes  (the NEXT file, buffered at the same time)
+          +  segment buffers in flight             (http-segmented-connections × chunk size, ≤ ~1 GiB)
           +  decoder / video-output / general overhead
 ```
 
@@ -155,7 +155,7 @@ at 8 MB/s, buffering slower than the movie plays.
 
 ### What the segmented downloader does
 
-It splits the file into `segment-size` chunks and downloads **`segmented-chunks` of
+It splits the file into `http-segmented-chunk-size` chunks and downloads **`http-segmented-connections` of
 them at the same time** on separate connections, reassembling them in order. When the
 bottleneck is *per-connection* (latency or server throttle) rather than your actual
 line, N workers gets you roughly **N× the throughput**.
@@ -176,7 +176,7 @@ of the segmented downloader — on the **uosc seek bar** and in the stats overla
 (`i`). That's not the same as mpv's usual `cache-speed`; it's the true network rate.
 So you can tune this empirically instead of guessing:
 
-1. Play a large network file and note the **combined rate** at `segmented-chunks=2`.
+1. Play a large network file and note the **combined rate** at `http-segmented-connections=2`.
 2. Raise it: **2 → 4 → 8**, watching the combined rate each time.
 3. **Stop when the combined rate stops improving.** That plateau is your real ceiling
    (either your line, or the server's total cap). Then back off one step — extra
@@ -191,28 +191,28 @@ So you can tune this empirically instead of guessing:
   own bandwidth is.
 - Maximum is **16**. Most people find the sweet spot at **4–8**.
 
-### `segment-size` and `segment-auto-size`
+### `http-segmented-chunk-size` and `http-segmented-auto-size`
 
-- **`segment-size`** (default `5MiB`): bigger chunks = fewer requests and less
+- **`http-segmented-chunk-size`** (default `5MiB`): bigger chunks = fewer requests and less
   per-request overhead, but coarser parallelism and more memory in flight. Smaller
   chunks = quicker to start and lighter on RAM, but more request overhead.
-- **`segment-auto-size=yes`** (default): lets chunks grow toward your demuxer budget
-  automatically — up to 4× your `segment-size`, and never past a ~1 GiB total in-flight
+- **`http-segmented-auto-size=yes`** (default): lets chunks grow toward your demuxer budget
+  automatically — up to 4× your `http-segmented-chunk-size`, and never past a ~1 GiB total in-flight
   window. Leave this on unless you're deliberately capping memory; it means a large
   cache gets filled with efficient large reads without you hand-tuning chunk size.
 
-### `next-file-segmented-chunks`
+### `http-segmented-prefetch-connections`
 
 Workers used to prefetch the **next** playlist item (default `2`). **Keep this low.**
 The next file is a nice-to-have; the file you're *actually watching* should get the
-bandwidth. If you set this as high as `segmented-chunks`, the prefetch will compete
+bandwidth. If you set this as high as `http-segmented-connections`, the prefetch will compete
 with playback and can cause the current file to stall. `1`–`2` is right.
 
 ---
 
 ## Quick recipes
 
-**"Playback stutters, buffer never fills"** → raise `segmented-chunks` (4, then 8) and
+**"Playback stutters, buffer never fills"** → raise `http-segmented-connections` (4, then 8) and
 watch the combined rate on the seek bar. This is a *throughput* problem, not a cache
 size problem — a bigger cache won't help if you can't fill it.
 
@@ -220,8 +220,8 @@ size problem — a bigger cache won't help if you can't fill it.
 make sure `demuxer-cache-unselected-audio=yes` and `demuxer-cache-unselected-subs=yes`
 (they're on by default in the Enhanced build).
 
-**"Gaps between playlist items"** → `next-file-prefetch=yes` and raise
-`next-file-demuxer-max-bytes-prefetch` (but remember it's added to your peak RAM).
+**"Gaps between playlist items"** → `prefetch-playlist=immediate` and raise
+`prefetch-demuxer-max-bytes` (but remember it's added to your peak RAM).
 
 **"mpv is using way too much RAM / froze my PC"** → you almost certainly stacked
 `demuxer-max-bytes` + `demuxer-max-back-bytes` + prefetch. Go back to the defaults and

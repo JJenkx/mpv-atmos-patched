@@ -66,8 +66,12 @@ echo "==> Build config: VARIANT=$VARIANT DISTRIBUTABLE=$DISTRIBUTABLE"
 FFMPEG_REPO="${FFMPEG_REPO:-https://github.com/FFmpeg/FFmpeg.git}"
 FFMPEG_REF="${FFMPEG_REF:-}"
 
+# Stock variant builds upstream mpv; enhanced builds the JJenkx fork's
+# "custom" branch (all features as commits — see build_mpv.sh for details).
 MPV_REPO="${MPV_REPO:-https://github.com/mpv-player/mpv.git}"
 MPV_REF="${MPV_REF:-}"
+MPV_ENHANCED_REPO="${MPV_ENHANCED_REPO:-https://github.com/JJenkx/mpv.git}"
+MPV_ENHANCED_REF="${MPV_ENHANCED_REF:-custom}"
 
 LUAJIT_REPO="${LUAJIT_REPO:-https://github.com/LuaJIT/LuaJIT.git}"
 LUAJIT_REF="${LUAJIT_REF:-}"
@@ -112,7 +116,8 @@ SPIRV_CROSS_REPO="${SPIRV_CROSS_REPO:-https://github.com/KhronosGroup/SPIRV-Cros
 SPIRV_CROSS_REF="${SPIRV_CROSS_REF:-}"
 
 LIBPLACEBO_REPO="${LIBPLACEBO_REPO:-https://github.com/haasn/libplacebo.git}"
-LIBPLACEBO_REF="${LIBPLACEBO_REF:-}"
+# Pinned: v7.360.1 is the minimum current mpv requires (see build_mpv.sh).
+LIBPLACEBO_REF="${LIBPLACEBO_REF:-v7.360.1}"
 
 OPENSSL_REPO="${OPENSSL_REPO:-https://github.com/openssl/openssl.git}"
 OPENSSL_REF="${OPENSSL_REF:-}"
@@ -279,8 +284,8 @@ ensure_checkout(){
       || git -C "$dir" fetch origin "refs/tags/$ref:refs/tags/$ref"
     git -C "$dir" checkout --detach "refs/tags/$ref"
   elif git -C "$dir" ls-remote --exit-code --heads origin "$ref" >/dev/null 2>&1; then
-    git -C "$dir" fetch --depth=1 origin "refs/heads/$ref:refs/remotes/origin/$ref" \
-      || git -C "$dir" fetch origin "refs/heads/$ref:refs/remotes/origin/$ref"
+    git -C "$dir" fetch --depth=1 origin "+refs/heads/$ref:refs/remotes/origin/$ref" \
+      || git -C "$dir" fetch origin "+refs/heads/$ref:refs/remotes/origin/$ref"
     git -C "$dir" checkout -B "$ref" "refs/remotes/origin/$ref"
   elif git -C "$dir" rev-parse -q --verify "$ref^{commit}" >/dev/null; then
     git -C "$dir" checkout --detach "$ref"
@@ -1033,41 +1038,20 @@ popd >/dev/null
 [ -f "$PREFIX/bin/ffmpeg.exe" ] || { echo "!! FFmpeg build failed"; exit 1; }
 
 # ── STEP 37: mpv ──────────────────────────────────────────────────────────────
-clone_or_update "$MPV_REPO" "$MPV_SRC" 1
-git -C "$MPV_SRC" reset --hard
-git -C "$MPV_SRC" clean -fdx -e build
-ensure_checkout "$MPV_SRC" "$MPV_REF"
-
-# Streaming enhancements + RAM fix = "enhanced" variant only. "stock" ships
-# stock mpv (the Atmos/TrueHD spdifenc patch is in the FFmpeg step, both variants).
+# enhanced: the JJenkx fork's "custom" branch, which carries every streaming
+# enhancement + the Windows heap-trim RAM fix as proper commits (no
+# apply-scripts). stock: upstream mpv. The Atmos/TrueHD spdifenc patch is in
+# the FFmpeg step above, applied in both variants.
 if [ "$VARIANT" = enhanced ]; then
-
-# Custom patches — identical set and order to the Linux build (all are
-# platform-agnostic anchored edits; they abort loudly if upstream moved).
-for p in apply_segmented_http.sh apply_segmented_speed.sh \
-         apply_demux_cache_unselected_subs.sh apply_thumbnail_cache.sh \
-         apply_next_file_prefetch.sh; do
-  PATCH="$SCRIPT_DIR/patches/$p"
-  if [ -x "$PATCH" ]; then
-    "$PATCH" "$MPV_SRC"
-  else
-    echo "!! $PATCH not found; building without it"
-  fi
-done
-
-# Windows-only RAM fix: the Linux malloc patch (patches/apply_malloc_tuning.sh)
-# targets glibc/osdep/main-fn-unix.c, which is not compiled here. Its Windows
-# analog periodically decommits freed heap back to the OS via
-# osdep/main-fn-win.c so a long playlist holds RSS flat.
-MALLOC_WIN_PATCH="$SCRIPT_DIR/patches/apply_malloc_tuning_win.sh"
-if [ -x "$MALLOC_WIN_PATCH" ]; then
-  "$MALLOC_WIN_PATCH" "$MPV_SRC"
+  clone_or_update "$MPV_ENHANCED_REPO" "$MPV_SRC" 1
+  git -C "$MPV_SRC" reset --hard
+  git -C "$MPV_SRC" clean -fdx -e build
+  ensure_checkout "$MPV_SRC" "$MPV_ENHANCED_REF"
 else
-  echo "!! $MALLOC_WIN_PATCH not found; building without Windows heap-trim fix"
-fi
-
-else
-  echo "==> VARIANT=stock: skipping streaming patches and the RAM/heap-trim patch"
+  clone_or_update "$MPV_REPO" "$MPV_SRC" 1
+  git -C "$MPV_SRC" reset --hard
+  git -C "$MPV_SRC" clean -fdx -e build
+  ensure_checkout "$MPV_SRC" "$MPV_REF"
 fi
 
 rm -rf "$MPV_BUILD_DIR"

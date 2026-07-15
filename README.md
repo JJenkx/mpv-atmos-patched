@@ -28,7 +28,7 @@ whether the extra streaming features are compiled in.
 
 | | **Stock + Atmos** | **Enhanced + Atmos** |
 |---|---|---|
-| Base | Stock mpv + stock FFmpeg | Stock mpv + FFmpeg + custom patches |
+| Base | Stock mpv + stock FFmpeg | [JJenkx/mpv fork, branch `custom`](https://github.com/JJenkx/mpv/commits/custom) + FFmpeg |
 | TrueHD/Atmos (MAT) passthrough | ✅ | ✅ |
 | Segmented parallel HTTP downloading | — | ✅ |
 | Live download-speed telemetry (uosc) | — | ✅ |
@@ -50,6 +50,16 @@ whether the extra streaming features are compiled in.
 > find your ceiling using the live download-rate readout), and — importantly — **how to
 > raise the cache sizes incrementally and measure RAM** instead of setting them huge and
 > freezing your machine.
+
+> The Enhanced features live as reviewable commits in the
+> [JJenkx/mpv fork](https://github.com/JJenkx/mpv/commits/custom) (branch
+> `custom`), each with full documentation in mpv's own manual pages
+> (`--http-segmented-connections`, `--prefetch-playlist=immediate`,
+> `--demuxer-cache-unselected-subs/-audio`, the `thumbnail-cache` command,
+> and the flat-RAM tuning). The fork tracks upstream mpv master via periodic
+> merges. This repo's `patches/` directory now contains only the FFmpeg
+> `spdifenc.c` file — the mpv-side apply-scripts it used to hold were retired
+> when the features moved into the fork.
 
 > The **Atmos/TrueHD passthrough** comes from a patch to FFmpeg's `spdifenc` and is
 > present in **both** variants. It is independent of AAC — no nonfree codecs are
@@ -158,9 +168,10 @@ anywhere and run **`mpv.exe`** (or drag a video onto it) — config lives in
 
 ## Why you can trust these binaries
 
-- **The source is right here.** Every patch is a readable file in
-  [`patches/`](patches/); the entire build is
-  [`build_mpv.sh`](build_mpv.sh) (Linux) and
+- **The source is right here.** The enhanced mpv is a public fork with
+  reviewable commits ([JJenkx/mpv, branch `custom`](https://github.com/JJenkx/mpv/commits/custom)),
+  the FFmpeg Atmos patch is a readable file in [`patches/`](patches/), and the
+  entire build is [`build_mpv.sh`](build_mpv.sh) (Linux) and
   [`build_mpv_windows.sh`](build_mpv_windows.sh) (Windows).
 - **The binaries are built in the open.** They are compiled by GitHub Actions,
   not uploaded from anyone's laptop. Every release's build log is public under
@@ -182,8 +193,9 @@ anywhere and run **`mpv.exe`** (or drag a video onto it) — config lives in
 ## Configuration
 
 Each build ships a small, curated `portable_config/mpv.conf` with sensible
-streaming defaults (the **enhanced** build additionally enables its patched
-options — segmented downloading, next-file prefetch, unselected-track caching).
+streaming defaults (the **enhanced** build additionally enables its extra
+options — segmented downloading, immediate playlist prefetch, unselected-track
+caching).
 
 > ### 🔊 Turning on TrueHD/Atmos passthrough (2-minute setup)
 > Bitstreaming HD audio to a receiver is the point of this build, but it **ships
