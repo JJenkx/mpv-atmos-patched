@@ -132,6 +132,9 @@ RIGHT {image-viewer} repeatable playlist-next
 #8 add saturation 1
 
 # mouse-centric bindings
+# Restores the pre-context-menu default: right-click = play/pause (mpv's new
+# builtin context menu is disabled via load-context-menu=no in mpv.conf).
+MBTN_RIGHT cycle pause
 MBTN_RIGHT {image-viewer} script-binding drag-to-pan
 MBTN_LEFT {image-viewer} script-binding pan-follows-cursor
 MBTN_LEFT_DBL {image-viewer} ignore

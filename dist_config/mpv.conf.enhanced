@@ -7,6 +7,12 @@
 demuxer-cache-unselected-audio=yes
 demuxer-cache-unselected-subs=yes
 
+# New upstream mpv feature: a builtin context menu is now force-bound to
+# right-click by default (context_menu.lua, DOCS/man/context_menu.rst). On
+# Linux/X11/Wayland there is no native-menu integration, so it stays on
+# unless disabled here. Restores right-click = play/pause via input.conf.
+load-context-menu=no
+
 ao=alsa                                      # ALSA audio output
 audio-channels=7.1,5.1,stereo
 audio-device='alsa/hdmi:CARD=HDMI,DEV=0'     # mpv --audio-device=help

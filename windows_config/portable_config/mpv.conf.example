@@ -1,6 +1,13 @@
 demuxer-cache-unselected-audio=yes
 demuxer-cache-unselected-subs=yes
 
+# New upstream mpv feature: a builtin context menu is now force-bound to
+# right-click by default (context_menu.lua, DOCS/man/context_menu.rst). On
+# platforms without native-menu integration (Linux/X11/Wayland; Windows has
+# its own native integration but this keeps behavior consistent) it stays on
+# unless disabled here. Restores right-click = play/pause via input.conf.
+load-context-menu=no
+
 # ── Windows additions (migrated from the Linux launcher mpv_patched.sh; mpv
 #    auto-uses the portable_config dir beside mpv.exe, so no wrapper needed) ──
 input-ipc-server=\\.\pipe\mpv-socket

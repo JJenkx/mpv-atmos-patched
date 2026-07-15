@@ -197,6 +197,14 @@ streaming defaults (the **enhanced** build additionally enables its extra
 options — segmented downloading, immediate playlist prefetch, unselected-track
 caching).
 
+> **Upstream mpv now opens a context menu on right-click by default**
+> (a genuine new mpv feature, not something this project adds — see
+> `DOCS/man/context_menu.rst` in the mpv source). If you're used to
+> right-click = play/pause, the **enhanced** config restores that with
+> `load-context-menu=no` + `MBTN_RIGHT cycle pause`. The **stock** config
+> leaves it at the upstream default, in keeping with "closest to upstream
+> mpv"; add the same two lines to your own config if you want it back.
+
 > ### 🔊 Turning on TrueHD/Atmos passthrough (2-minute setup)
 > Bitstreaming HD audio to a receiver is the point of this build, but it **ships
 > off**, because passthrough only works when it's aimed at *your* HDMI/AVR device —
