@@ -116,8 +116,9 @@ SPIRV_CROSS_REPO="${SPIRV_CROSS_REPO:-https://github.com/KhronosGroup/SPIRV-Cros
 SPIRV_CROSS_REF="${SPIRV_CROSS_REF:-}"
 
 LIBPLACEBO_REPO="${LIBPLACEBO_REPO:-https://github.com/haasn/libplacebo.git}"
-# Pinned: v7.360.1 is the minimum current mpv requires (see build_mpv.sh).
-LIBPLACEBO_REF="${LIBPLACEBO_REF:-v7.360.1}"
+# Tracks master (see build_mpv.sh — the v7.360.1 pin was an amdgpu workaround that
+# never worked, and the bug is Linux-only anyway).
+LIBPLACEBO_REF="${LIBPLACEBO_REF:-}"
 
 OPENSSL_REPO="${OPENSSL_REPO:-https://github.com/openssl/openssl.git}"
 OPENSSL_REF="${OPENSSL_REF:-}"

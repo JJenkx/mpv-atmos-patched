@@ -126,10 +126,12 @@ LIBBLURAY_REPO="${LIBBLURAY_REPO:-https://code.videolan.org/videolan/libbluray.g
 LIBBLURAY_REF="${LIBBLURAY_REF:-}"
 
 LIBPLACEBO_REPO="${LIBPLACEBO_REPO:-https://github.com/haasn/libplacebo.git}"
-# Pinned: v7.360.1 is the minimum current mpv requires. Master tip was in the
-# build during a kcompactd/amdgpu_hmm_invalidate_gfx kernel oops (2026-07-14);
-# bump deliberately, never implicitly.
-LIBPLACEBO_REF="${LIBPLACEBO_REF:-v7.360.1}"
+# Tracks master. Was pinned to v7.360.1 (2026-07-14) against a
+# kcompactd/amdgpu_hmm_invalidate_gfx kernel oops; the pin never helped — kcompactd
+# trips that notifier on any libplacebo that imports host pointers, not just recent
+# ones. Fixed kernel-side by 52f65096 ("drm/amdgpu: fix check in
+# amdgpu_hmm_invalidate_gfx", mainline 2026-06-24, Cc stable). See README Requirements.
+LIBPLACEBO_REF="${LIBPLACEBO_REF:-}"
 
 # Codec / media libs built from source to avoid SONAME breakage on system updates
 OPENSSL_REPO="${OPENSSL_REPO:-https://github.com/openssl/openssl.git}"

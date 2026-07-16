@@ -288,6 +288,22 @@ sudo dnf install vulkan-loader pulseaudio-libs alsa-lib mesa-libGL mesa-libEGL
 sudo pacman -S vulkan-icd-loader libpulse alsa-lib libglvnd
 ```
 
+> #### AMD GPUs: use a current kernel
+> mpv's GPU renderer hands your system memory straight to the GPU (userptr/HMM). Kernels
+> missing the amdgpu fix [`52f65096`](https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=52f650963d8825e97a0ccdd2b616f8a01d9d3d38) can hit a NULL-deref in
+> `amdgpu_hmm_invalidate_gfx` when the kernel migrates one of those pages
+> (`kcompactd`, THP defrag) — which wedges the machine in-kernel: unkillable processes,
+> dead desktop, and a reboot that may not complete.
+>
+> This is a **kernel/driver bug, not an mpv or build one** — any mpv on an affected
+> kernel is exposed, and no version of this build avoids it. The fix landed in mainline
+> on 2026-06-24 marked `Cc: stable`, so a current stable or distro kernel already has it.
+>
+> Stuck on an older kernel? These reduce (but don't eliminate) exposure:
+> `sudo sysctl vm.compaction_proactiveness=0` plus transparent-hugepage defrag set to
+> `never`; or run with `--hwdec=vulkan`, which keeps frames out of system memory
+> entirely.
+
 ### Enabling passthrough — Windows
 
 1. **Open PowerShell** (or Command Prompt) **in the folder you unzipped.**
